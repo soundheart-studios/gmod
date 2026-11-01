@@ -47,4 +47,8 @@ test('claims and decisions', () => {
   expect(decidesPlan('node ~/gmod/bin/gmod.mjs approve')).toBe(true)
   expect(decidesPlan("node '/x/gmod.mjs' reject 'no'")).toBe(true)
   expect(decidesPlan('node ~/gmod/bin/gmod.mjs proposal')).toBe(false)
+  expect(decidesPlan('node ~/gmod/bin/gmod.mjs adr accept cents-only')).toBe(true)
+  expect(decidesPlan('gmod adr reject cents-only "not now"')).toBe(true)
+  expect(decidesPlan('node ~/gmod/bin/gmod.mjs adr propose {}')).toBe(false)
+  expect(decidesPlan('node ~/gmod/bin/gmod.mjs adr list')).toBe(false)
 })

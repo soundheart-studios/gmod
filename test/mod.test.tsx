@@ -405,3 +405,41 @@ test('a governed session checks main in the background', async ($, on) => {
   await started($, on, () => ({ exitCode: 0, stdout: STATUS }))
   expect(every).toEqual([120_000])
 })
+
+// ---- gap 1: ADRs ----
+
+const ADRS = JSON.parse(STATUS)
+ADRS.proposal = null
+ADRS.jobs[1].adrs = [{ id: '0001', title: 'Sums never round', rules: [{ level: 'must', text: 'never round inside sum' }] }]
+ADRS.adrDrafts = [{ draft: 'cents-only', title: 'Money is integer cents', decision: 'Store and add money as integer cents.', scope: ['src/**'], rules: [{ level: 'must', text: 'no floats for money' }, { level: 'should', text: 'name amounts *Cents' }], supersedes: null, by: 'alice@x.io' }]
+const ADR_STATUS = JSON.stringify(ADRS)
+
+test('the agent drafts decisions and never accepts them', async ($, on) => {
+  const seen = engine(on, args => (args[0] === 'adr' ? { exitCode: 0, stdout: 'drafted ADR cents-only: Money is integer cents.' } : { exitCode: 0, stdout: ADR_STATUS }))
+  const out = await $.tool.call({ tool: 'mcp__gmod__adr_propose', title: 'Money is integer cents', decision: 'x', rules: [{ level: 'must', text: 'no floats' }] } as never)
+  expect(String(out.result)).toContain("don't accept it yourself")
+  const run = seen.runs.find(r => r.args[0] === 'adr')!
+  expect(run.args[1]).toBe('propose')
+  expect(JSON.parse(String(run.args[2])).title).toBe('Money is integer cents')
+  expect((await $.tool.call({ tool: 'Bash', command: 'node ~/gmod/bin/gmod.mjs adr accept cents-only' })).deny).toContain("person's decision")
+  expect((await $.command.run({ command: 'gmod', args: 'adr accept cents-only' } as never)).text).toContain('Only a person')
+})
+
+test('a decision draft waits under Needs you, with Accept and Reject', async ($, on) => {
+  const seen = await started($, on, args => (args[0] === 'adr' ? { exitCode: 0, stdout: 'accepted ADR 0002: Money is integer cents' } : { exitCode: 0, stdout: ADR_STATUS }))
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: /^Decision: Money is integer cents$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^■ must no floats for money$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^governs src\/\*\*$/ })).toBeDefined()
+  await ui.press({ key: 'adracceptcents-only' })
+  expect(seen.runs.some(r => r.args[0] === 'adr' && r.args[1] === 'accept' && r.args[2] === 'cents-only')).toBe(true)
+  await ui.unmount()
+})
+
+test('an opened job shows the decisions that bind it', async ($, on) => {
+  await started($, on, () => ({ exitCode: 0, stdout: ADR_STATUS }))
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'rowadd-sum' })
+  expect(await ui.find({ type: 'Text', text: /^⚖ ADR 0001 Sums never round {2}must: never round inside sum$/ })).toBeDefined()
+  await ui.unmount()
+})

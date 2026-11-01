@@ -12,6 +12,7 @@
 // (advice only); GMOD_REVIEW_OVERRIDE=1 turns a fail into a note.
 import { writeFileSync } from 'node:fs';
 import * as core from '../lib/core.mjs';
+import * as adr from '../lib/adr.mjs';
 
 const LOCAL = process.env.GMOD_REVIEW_URL?.replace(/\/$/, '');
 const MODEL = process.env.GMOD_REVIEW_MODEL || (LOCAL ? '' : 'claude-opus-5-5');
@@ -71,7 +72,7 @@ const SYSTEM = `You review one pull request against the job it claims to do. A d
 1. criteria: for each "done when" criterion, does the change actually achieve it? Quote the diff.
 2. tests_are_real: do the tests check the behaviour the criteria describe? Fail tests that pass whatever the code does, assert only what the code already did, or mock away the behaviour under test.
 3. stays_within_goal: does the change do anything the job's goal doesn't ask for (behaviour changes, new features, removed safeguards), even inside its allowed files?
-4. adrs: list only ADRs the change touches; fail a change that contradicts an accepted ADR.
+4. adrs: answer every ADR listed under <adrs>, by its id. Breaking a "must" rule is "fail"; departing from a "should" rule is at most "concern" (say why). An ADR the change doesn't actually engage is "pass".
 5. summary: plain words for the plan's owner, who may not read code.
 
 Verdicts: "pass", "concern" (worth a human look, does not block), "fail" (blocks: something is wrong and you can point at it). Use "fail" only with evidence. Overall is the worst verdict, except that concerns alone are "concern".
@@ -93,12 +94,11 @@ if (!LOCAL && !process.env.ANTHROPIC_API_KEY) done('### gmod review: skipped (no
 
 const diff = core.git(['diff', `${mb}...${head}`], { cwd: root });
 if (diff.length > DIFF_LIMIT) done(`### gmod review: skipped (the diff is ${diff.length} characters; split the job, or review it by hand)`, 0);
-let adrs = '';
-if (plan.adr_dir) {
-  const files = core.git(['ls-tree', '-r', '--name-only', mb, '--', plan.adr_dir], { cwd: root, allow: true }).out.split('\n').filter(f => f.endsWith('.md'));
-  for (const f of files) adrs += `\n--- ${f}\n${core.git(['show', `${mb}:${f}`], { cwd: root })}\n`;
-  if (adrs.length > ADR_LIMIT) adrs = `(the ADRs are ${adrs.length} characters, too many to send; listed only)\n${files.join('\n')}`;
-}
+// Only the accepted ADRs this change falls under (by their scope), each
+// with its rules: the reviewer answers every one.
+const governing = adr.applicable(adr.listAdrs(root, { plan, ref: mb }), changed.split('\n').filter(Boolean));
+let adrs = governing.map(a => `\n--- ADR ${a.id}: ${a.title}\n${a.body}`).join('\n');
+if (adrs.length > ADR_LIMIT) adrs = `(the governing ADRs are ${adrs.length} characters, too many to send; listed only)\n${governing.map(a => `ADR ${a.id}: ${a.title}\n${a.rules.map(r => `- ${r.level}: ${r.text}`).join('\n')}`).join('\n')}`;
 
 const material = `<job>\n${JSON.stringify({ id: job.id, goal: job.goal, brief: job.brief, done_when: job.done_when.map(c => c.text) }, null, 2)}\n</job>\n\n<adrs>${adrs || '\n(none)\n'}</adrs>\n\n<diff>\n${diff}\n</diff>`;
 
@@ -121,8 +121,10 @@ async function ask() {
     if (!res.ok) done(`### gmod review: the reviewer at ${LOCAL} answered ${res.status}; review it by hand`, 0);
     const body = await res.json();
     // Thinking models may put their reasoning before the answer.
-    const text = (body.choices?.[0]?.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-    return { text, model: body.model || MODEL || 'a local model', refused: false };
+    const choice = body.choices?.[0] ?? {};
+    const text = (choice.message?.content ?? '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    if (process.env.GMOD_REVIEW_DEBUG) console.error(JSON.stringify({ finish: choice.finish_reason, usage: body.usage, content: choice.message?.content?.slice(0, 2000), reasoning: choice.message?.reasoning_content?.slice(-1000) }, null, 2));
+    return { text, model: body.model || MODEL || 'a local model', refused: false, finish: choice.finish_reason };
   }
   const { default: Anthropic } = await import('@anthropic-ai/sdk');
   const response = await new Anthropic().beta.messages.create({
@@ -137,13 +139,23 @@ async function ask() {
   return { text: response.content.find(b => b.type === 'text')?.text ?? '', model: response.model, refused: response.stop_reason === 'refusal' };
 }
 
-const answer = await ask();
+// Local models now and then answer in prose, or run out of room: ask once more.
+const parse = a => {
+  try {
+    return JSON.parse(a.text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+  } catch {
+    return null;
+  }
+};
+let answer = await ask();
 if (answer.refused) done('### gmod review: the reviewer declined this change; review it by hand', 0);
-let r;
-try {
-  r = JSON.parse(answer.text.replace(/^```(?:json)?\s*|\s*```$/g, ''));
-} catch {
-  done("### gmod review: the reviewer's answer wasn't JSON; review it by hand", 0);
+let r = parse(answer);
+if (!r && LOCAL) {
+  answer = await ask();
+  r = parse(answer);
+}
+if (!r) {
+  done(`### gmod review: the reviewer's answer wasn't JSON${answer.finish ? ` (it stopped: ${answer.finish})` : ''}; review it by hand`, 0);
 }
 // Whatever the model, the answer is checked against the rubric's shape.
 const verdicts = ['pass', 'concern', 'fail'];

@@ -176,6 +176,7 @@ export const register: Register = on => {
     await $.tool.register({ name: 'propose_phase', description: 'Draft a phase, or replace one: a group of jobs with an outcome, ordered after other phases. Put jobs in it with their "phase" field. A plan with phases needs every job in one before the person can approve it.', inputSchema: { type: 'object', properties: { phase: PHASE }, required: ['phase'] }, isDeferred: false })
     await $.tool.register({ name: 'edit_phase', description: "Change a phase's title, outcome or after in the plan proposal.", inputSchema: { type: 'object', properties: { id: { type: 'string' }, changes: { type: 'object' } }, required: ['id', 'changes'] }, isDeferred: false })
     await $.tool.register({ name: 'drop_phase', description: 'Take an empty phase out of the plan proposal, saying why. Move or drop its jobs first.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, reason: { type: 'string' } }, required: ['id'] }, isDeferred: false })
+    await $.tool.register({ name: 'adr_propose', description: 'Draft an architecture decision record: a decision agents must follow from now on. Give it a short title, the scope (globs of the files it governs; empty for the whole repository), the context, the decision, and its rules, each {level: "must" | "should", text}. The person accepts it; then it binds every job whose files it covers, and CI holds pull requests to it.', inputSchema: { type: 'object', properties: { title: { type: 'string' }, scope: { type: 'array', items: { type: 'string' } }, context: { type: 'string' }, decision: { type: 'string' }, rules: { type: 'array', items: { type: 'object', properties: { level: { type: 'string', enum: ['must', 'should'] }, text: { type: 'string' } }, required: ['level', 'text'] } }, supersedes: { type: 'string', description: 'The id of an ADR this one replaces, e.g. 0003' } }, required: ['title', 'decision', 'rules'] }, isDeferred: false })
     await $.tool.register({ name: 'describe_proposal', description: 'Say what the plan proposal is for, in one short plain sentence (under 25 words) a non-engineer understands, and list the assumptions the person is really approving (choices you made that they might not have). Shown at the top of the proposal card.', inputSchema: { type: 'object', properties: { summary: { type: 'string' }, assumptions: { type: 'array', items: { type: 'string' } } } }, isDeferred: false })
     const s = await refresh($, true)
     if ((s?.governed || s?.proposal) && (await $.session.surfaces()).length) void $.ui.open({ id: PANE, title: 'gmod' })
@@ -248,6 +249,12 @@ export const register: Register = on => {
     await refresh($)
     return r.exitCode === 0 ? { result: text(r) } : { deny: text(r) }
   })
+  on('tool.call', { tool: 'mcp__gmod__adr_propose' }, async ($, e) => {
+    const draft = Object.fromEntries(['title', 'scope', 'context', 'decision', 'rules', 'supersedes'].map(k => [k, (e as unknown as Record<string, unknown>)[k]]).filter(([, v]) => v !== undefined))
+    const r = await gmod($, ['adr', 'propose', JSON.stringify(draft)])
+    await refresh($)
+    return r.exitCode === 0 ? { result: `${text(r)} The person sees it in the gmod pane; don't accept it yourself.` } : { deny: text(r) }
+  })
   on('tool.call', { tool: 'mcp__gmod__describe_proposal' }, async ($, e) => {
     const summary = arg(e, 'summary')
     const assumptions = arg(e, 'assumptions')
@@ -319,6 +326,16 @@ export const register: Register = on => {
         await refresh($)
         return { text: text(r), context: r.exitCode === 0 ? [`The person rejected the plan proposal${rest.length ? `: "${rest.join(' ')}"` : ''}. Ask what they want instead before drafting again.`] : undefined }
       }
+      case 'adr': {
+        const [what = 'drafts', ...more] = rest
+        if (['accept', 'reject'].includes(what) && !isPerson) return { text: `Only a person at the prompt can ${what} a decision.` }
+        const r = await gmod($, ['adr', what, ...more])
+        await refresh($)
+        return {
+          text: text(r),
+          context: r.exitCode === 0 && ['accept', 'reject'].includes(what) ? [`The person ${what === 'accept' ? 'accepted' : 'rejected'} the decision draft: ${text(r)}`] : undefined,
+        }
+      }
       case 'allow-plan':
         if (!isPerson) return { text: 'Only a person at the prompt can allow plan changes.' }
         await update($, allowPlan, () => true)
@@ -337,7 +354,7 @@ export const register: Register = on => {
         return { text: text(r) }
       }
       default:
-        return { text: 'Usage: /gmod [plan | next | claim <job> | check | release | proposal | approve | reject [why] | allow-plan | lock-plan | sweep]' }
+        return { text: 'Usage: /gmod [plan | next | claim <job> | check | release | proposal | approve | reject [why] | adr [drafts | list | accept <draft> | reject <draft> [why]] | allow-plan | lock-plan | sweep]' }
     }
   })
 
@@ -347,8 +364,9 @@ export const register: Register = on => {
     const composed = await next(e)
     const s = await read($, status)
     if (!s?.governed && !s?.proposal) return composed
+    const decisions = (s.claim?.adrs ?? []).map(a => `- ADR ${a.id} (${a.title}):\n${a.rules.map(r => `  - ${r.level}: ${r.text}`).join('\n')}`).join('\n')
     const now = s.claim
-      ? `\nYou hold ${s.claim.job}: ${s.claim.goal}\nIts files: ${s.claim.files.join(', ')}\nDone when:\n${s.claim.done_when.map(c => `- ${c}`).join('\n')}`
+      ? `\nYou hold ${s.claim.job}: ${s.claim.goal}\nIts files: ${s.claim.files.join(', ')}\nDone when:\n${s.claim.done_when.map(c => `- ${c}`).join('\n')}${decisions ? `\nDecisions that bind this job (a "must" is never broken; to change one, draft a new ADR with mcp__gmod__adr_propose):\n${decisions}` : ''}`
       : `\nNo job is claimed${s.next ? `; the next ready one is ${s.next}` : ''}.`
     const draft = s.proposal ? `\nA plan proposal is waiting for the person: ${s.proposal.summary}.` : ''
     return { sections: [...composed.sections, { id: 'gmod:routine', text: ROUTINE + now + draft, scope: 'session' as const }] }
@@ -646,6 +664,12 @@ export const register: Register = on => {
                 </Text>
               ))}
               <Text dimColor wrap="wrap">may change {j.files.join(', ')}</Text>
+              {(j.adrs ?? []).map(a => (
+                <Text key={`adr${a.id}`} color="cyan" wrap="wrap">
+                  ⚖ ADR {a.id} {a.title}
+                  <Text dimColor>{a.rules.some(r => r.level === 'must') ? `  must: ${a.rules.filter(r => r.level === 'must').map(r => r.text).join('; ')}` : ''}</Text>
+                </Text>
+              ))}
               {j.by && <Text dimColor>claimed by {j.by}</Text>}
             </Box>
           )}
@@ -691,7 +715,41 @@ export const register: Register = on => {
     }
 
     const broken = jobs.filter(j => j.moved && ['conflicts', 'breaks'].includes(j.moved.level))
-    const needs = Boolean(p) || stalled.length > 0 || broken.length > 0
+    const adrDrafts = s.adrDrafts ?? []
+    const needs = Boolean(p) || stalled.length > 0 || broken.length > 0 || adrDrafts.length > 0
+
+    async function decideAdr(choice: 'accept' | 'reject', draft: string) {
+      const r = await gmod($, ['adr', choice, draft])
+      await refresh($)
+      $.ui.toast(cut(text(r), 120))
+    }
+
+    // A decision draft: the title, what was decided, its rules, and the yes.
+    function adrCard(d: (typeof adrDrafts)[number]) {
+      return (
+        <Box key={`adrcard${d.draft}`} flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1} marginTop={1}>
+          <Text bold>Decision: {d.title}</Text>
+          <Text wrap="wrap">{d.decision}</Text>
+          {d.rules.map(r => (
+            <Text key={r.text} color={r.level === 'must' ? 'magenta' : undefined} dimColor={r.level === 'should'} wrap="wrap">
+              {r.level === 'must' ? '■ must' : '□ should'} {r.text}
+            </Text>
+          ))}
+          <Text dimColor wrap="wrap">
+            governs {d.scope.length ? d.scope.join(', ') : 'the whole repository'}
+            {d.supersedes ? ` · replaces ADR ${d.supersedes}` : ''}
+          </Text>
+          <Box flexDirection="row" gap={2} marginTop={1}>
+            <Button key={`adraccept${d.draft}`} variant="primary" onPress={() => decideAdr('accept', d.draft)}>
+              Accept
+            </Button>
+            <Button key={`adrreject${d.draft}`} onPress={() => decideAdr('reject', d.draft)}>
+              Reject
+            </Button>
+          </Box>
+        </Box>
+      )
+    }
     return (
       <Box flexDirection="column">
         <Text>
@@ -706,6 +764,7 @@ export const register: Register = on => {
           <Box flexDirection="column" marginTop={1}>
             <Text bold color="cyan">Needs you</Text>
             {p && card(p)}
+            {adrDrafts.map(d => adrCard(d))}
             {stalled.map(j => (
               <Text key={`stall${j.id}`} color="red" wrap="wrap">! {j.id} is red{j.where && j.where !== 'here' ? ` in ${j.where}` : ''}: its criteria still fail</Text>
             ))}

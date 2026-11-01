@@ -1,3 +1,6 @@
+export type GmodRule = { level: 'must' | 'should'; text: string }
+export type GmodAdr = { id: string; title: string; rules: GmodRule[] }
+export type GmodAdrDraft = { draft: string; title: string; decision: string; scope: string[]; rules: GmodRule[]; supersedes: string | null; by: string }
 export type GmodRun = { result: 'green' | 'red'; at: string; failed: string[] }
 export type GmodJob = {
   id: string
@@ -15,6 +18,7 @@ export type GmodJob = {
   moved: { level: 'fresh' | 'behind' | 'touched' | 'conflicts' | 'breaks'; behind: number; landed: string[]; changed: string[]; touched: string[]; conflicts: string[]; failing: string[] } | null
   criteria: { text: string; pass: boolean | null }[]
   files: string[]
+  adrs?: GmodAdr[]
 }
 export type GmodJobCard = { id: string; goal: string; phase: string | null; after: string[]; criteria: string[]; files: number; tests: number; paths: string[] }
 export type GmodPhaseCard = { id: string; title: string; outcome: string; after: string[] }
@@ -59,7 +63,8 @@ export type GmodStatus = {
   root?: string
   proposal?: GmodProposal | null
   phases?: GmodPhase[]
-  claim?: { job: string; goal: string; files: string[]; done_when: string[]; brief?: string } | null
+  claim?: { job: string; goal: string; files: string[]; done_when: string[]; brief?: string; adrs?: GmodAdr[] } | null
+  adrDrafts?: GmodAdrDraft[]
   evidence?: GmodRun[]
   sawRed?: boolean
   gate?: { ok: boolean; reason: string } | null

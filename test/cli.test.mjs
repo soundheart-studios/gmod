@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -591,5 +591,91 @@ test('gap 6: a CI change travels alone, for the owners to review', () => {
     write(w.alice, { 'src/sum.mjs': CODE });
     sh(w.alice, 'git', ['commit', '-q', '-am', 'ci: and some code']);
     assert.match(gmod(w.alice, 'verify', '--base', 'origin/main').out, /❌ a CI change carries only CI files; also changed: src\/sum\.mjs/);
+  } finally { w.done(); }
+});
+
+// ---- gap 1: ADRs ----
+
+const DRAFT = {
+  title: 'Sums never round',
+  scope: ['src/sum.mjs', 'src/mul.mjs'],
+  context: 'Money adds up through these.',
+  decision: 'Arithmetic stays exact: no rounding inside src/.',
+  rules: [{ level: 'must', text: 'never round inside sum or mul' }, { level: 'should', text: 'say so in a comment where precision matters' }],
+};
+
+test('ADRs: drafted by the agent, accepted by a person, numbered and committed alone', () => {
+  const w = world();
+  try {
+    const d = JSON.parse(gmod(w.alice, 'adr', 'propose', JSON.stringify(DRAFT), '--json').out);
+    assert.equal(d.draft, 'sums-never-round');
+    assert.match(gmod(w.alice, 'adr', 'drafts').out, /sums-never-round: Sums never round\n {2}must: never round inside sum or mul/);
+    assert.match(gmod(w.alice, 'adr', 'propose', JSON.stringify({ ...DRAFT, rules: [] })).err, /at least one rule/);
+
+    const yes = gmod(w.alice, 'adr', 'accept', 'sums-never-round');
+    assert.equal(yes.code, 0, yes.err);
+    assert.match(yes.out, /accepted ADR 0001: Sums never round/);
+    const file = readFileSync(join(w.alice, 'docs/adr/0001-sums-never-round.md'), 'utf8');
+    assert.match(file, /^---\nid: 0001\ntitle: Sums never round\nstatus: accepted\nscope: src\/sum\.mjs, src\/mul\.mjs\n/);
+    assert.match(file, /## Rules\n- must: never round inside sum or mul\n- should: say so in a comment where precision matters/);
+    assert.equal(sh(w.alice, 'git', ['log', '-1', '--format=%s']), 'adr: 0001 Sums never round');
+    assert.equal(sh(w.alice, 'git', ['show', '--name-only', '--format=', 'HEAD']), 'docs/adr/0001-sums-never-round.md');
+
+    // A later one supersedes it: the old one says so.
+    gmod(w.alice, 'adr', 'propose', JSON.stringify({ ...DRAFT, title: 'Sums round to cents', supersedes: '0001', rules: [{ level: 'must', text: 'round to cents at the edge only' }] }));
+    assert.match(gmod(w.alice, 'adr', 'accept', 'sums-round-to-cents').out, /accepted ADR 0002: Sums round to cents \(supersedes 0001\)/);
+    assert.match(readFileSync(join(w.alice, 'docs/adr/0001-sums-never-round.md'), 'utf8'), /status: superseded\nsuperseded_by: 0002/);
+    assert.match(gmod(w.alice, 'adr', 'list').out, /^0001 superseded +Sums never round\n0002 accepted +Sums round to cents/m);
+
+    // Rejected drafts just go.
+    gmod(w.alice, 'adr', 'propose', JSON.stringify({ ...DRAFT, title: 'Nope' }));
+    assert.match(gmod(w.alice, 'adr', 'reject', 'nope', 'not now').out, /rejected nope \(not now\)/);
+    assert.equal(gmod(w.alice, 'adr', 'drafts').out, 'no ADR drafts');
+  } finally { w.done(); }
+});
+
+test('ADRs: the job is told the rules that apply to it, and the gate names them', () => {
+  const w = world();
+  try {
+    gmod(w.alice, 'adr', 'propose', JSON.stringify(DRAFT));
+    sh(w.alice, 'git', ['switch', '-q', '-c', 'adr-branch']);
+    gmod(w.alice, 'adr', 'accept', 'sums-never-round');
+    sh(w.alice, 'git', ['push', '-q', 'origin', 'HEAD:main']);
+    sh(w.alice, 'git', ['switch', '-q', 'main']);
+    sh(w.alice, 'git', ['pull', '-q', 'origin', 'main']);
+
+    gmod(w.alice, 'claim', 'add-sum');
+    const st = JSON.parse(gmod(w.alice, 'status', '--no-sync').out);
+    assert.deepEqual(st.claim.adrs.map(a => [a.id, a.title, a.rules.map(r => r.level)]), [['0001', 'Sums never round', ['must', 'should']]]);
+    assert.deepEqual(JSON.parse(gmod(w.alice, 'adr', 'for', 'src/sum.mjs', '--json').out).map(a => a.id), ['0001']);
+    assert.deepEqual(JSON.parse(gmod(w.alice, 'adr', 'for', 'README', '--json').out), []);
+
+    write(w.alice, { 'src/sum.mjs': CODE, 'test/sum.test.mjs': TEST });
+    sh(w.alice, 'git', ['add', '-A']);
+    sh(w.alice, 'git', ['commit', '-q', '-m', 'add-sum: sum adds']);
+    assert.match(gmod(w.alice, 'verify', '--base', 'origin/main').out, /ℹ️ falls under ADR 0001 \(Sums never round\): must never round inside sum or mul/);
+  } finally { w.done(); }
+});
+
+test('ADRs: an ADR-only pull request travels alone; mixed with code it is refused', () => {
+  const w = world();
+  try {
+    gmod(w.alice, 'adr', 'propose', JSON.stringify(DRAFT));
+    sh(w.alice, 'git', ['switch', '-q', '-c', 'adr-branch']);
+    gmod(w.alice, 'adr', 'accept', 'sums-never-round');
+    const ok = gmod(w.alice, 'verify', '--base', 'origin/main');
+    assert.equal(ok.code, 0, ok.out);
+    assert.match(ok.out, /✅ a decision record on its own/);
+    write(w.alice, { 'src/sum.mjs': CODE });
+    sh(w.alice, 'git', ['commit', '-q', '-am', 'and code']);
+    assert.match(gmod(w.alice, 'verify', '--base', 'origin/main').out, /❌ a decision record travels alone; also changed: src\/sum\.mjs/);
+  } finally { w.done(); }
+});
+
+test('ADRs: the agent edits ADR files only through drafts', () => {
+  const w = world();
+  try {
+    gmod(w.alice, 'claim', 'add-sum');
+    assert.match(gmod(w.alice, 'guard-path', 'docs/adr/0001-x.md').out, /decision records change only through a draft a person accepts/);
   } finally { w.done(); }
 });

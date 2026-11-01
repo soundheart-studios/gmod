@@ -3,6 +3,7 @@
 // the Claude Code mod and CI.
 import * as core from '../lib/core.mjs';
 import * as ci from '../lib/ci.mjs';
+import * as adr from '../lib/adr.mjs';
 
 const HELP = `gmod: planned work with proof, on plain git
 
@@ -39,6 +40,13 @@ const HELP = `gmod: planned work with proof, on plain git
                                   the work merged onto today's main
   gmod notice <path>              what the agent working at <path> should hear, once
   gmod sweep                      let go of claims on jobs done on main
+
+  gmod adr propose '<draft json>'  draft a decision: {title, scope, context, decision, rules: [{level, text}], supersedes}
+  gmod adr drafts                 the drafts waiting for a person
+  gmod adr accept <draft>         a person's yes: numbered, written to docs/adr, committed alone
+  gmod adr reject <draft> [why]   a person's no
+  gmod adr list                   every ADR and its status
+  gmod adr for <path>...          the accepted ADRs that govern these files
 
   gmod ci init [--runs-on <label>] (--gmod-home <path> | --gmod-repo <owner/repo>[@ref] [--gmod-token-secret <name>])
                [--reviewer claude|local|none] [--review-url <url>] [--review-model <m>] [--blocking]
@@ -91,6 +99,7 @@ async function main() {
   }
   const root = core.repoRoot();
   if (cmd === 'ci') return runCi(root, args[0], flags);
+  if (cmd === 'adr') return runAdr(root, args[0], args.slice(1), flags);
   switch (cmd) {
     case 'init': {
       const r = core.init(root);
@@ -225,6 +234,34 @@ async function main() {
     default:
       throw new core.GmodError(`unknown command ${cmd}\n\n${HELP}`);
   }
+}
+
+function runAdr(root, sub, rest, flags) {
+  if (sub === 'propose') {
+    const d = adr.proposeAdr(root, json(rest[0], 'the draft'));
+    return out(flags, d, `drafted ADR ${d.draft}: ${d.title}. A person accepts it: gmod adr accept ${d.draft}`);
+  }
+  if (sub === 'drafts') {
+    const list = adr.drafts(root);
+    return out(flags, list, list.map(d => `${d.draft}: ${d.title}${d.supersedes ? ` (supersedes ${d.supersedes})` : ''}\n${d.rules.map(r => `  ${r.level}: ${r.text}`).join('\n')}`).join('\n') || 'no ADR drafts');
+  }
+  if (sub === 'accept') {
+    const r = adr.acceptAdr(root, rest[0]);
+    return out(flags, r, `accepted ADR ${r.id}: ${r.title}${r.supersedes ? ` (supersedes ${r.supersedes})` : ''}`);
+  }
+  if (sub === 'reject') {
+    const r = adr.rejectAdr(root, rest[0], rest.slice(1).join(' '));
+    return out(flags, r, `rejected ${r.draft}${r.reason ? ` (${r.reason})` : ''}`);
+  }
+  if (sub === 'list') {
+    const list = adr.listAdrs(root);
+    return out(flags, list, list.map(a => `${a.id} ${a.status.padEnd(11)}${a.title}`).join('\n') || 'no ADRs');
+  }
+  if (sub === 'for') {
+    const list = adr.applicable(adr.listAdrs(root), rest);
+    return out(flags, list.map(a => ({ id: a.id, title: a.title, rules: a.rules })), list.map(a => `${a.id} ${a.title}\n${a.rules.map(r => `  ${r.level}: ${r.text}`).join('\n')}`).join('\n') || 'no ADR governs these files');
+  }
+  throw new core.GmodError('gmod adr propose | drafts | accept | reject | list | for');
 }
 
 async function runCi(root, sub, flags) {

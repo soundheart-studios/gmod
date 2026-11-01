@@ -44,5 +44,5 @@ export function movesClaims(cmd: string): boolean {
 }
 
 export function decidesPlan(cmd: string): boolean {
-  return /\bgmod(?:\.mjs)?['"]?\s+(?:approve|reject)\b/.test(cmd)
+  return /\bgmod(?:\.mjs)?['"]?\s+(?:adr\s+)?(?:approve|reject|accept)\b/.test(cmd)
 }
