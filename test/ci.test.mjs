@@ -99,6 +99,7 @@ function fakeGitea(state) {
       if (req.url === '/api/v1/repos/acme/demo/branch_protections' && req.method === 'POST') return send(201, (state.rule = JSON.parse(body)));
       if (req.url === '/api/v1/repos/acme/demo/actions/runners') return send(200, { runners: state.runners ?? [] });
       if (req.url === '/api/v1/user/actions/runners') return send(200, { runners: [] });
+      if (req.url === '/api/v1/admin/actions/runners' && state.notAdmin) return send(403, { message: 'token does not have required scope: read:admin' });
       if (req.url === '/api/v1/admin/actions/runners') return send(200, { runners: state.instanceRunners ?? [] });
       if (req.url === '/api/v1/repos/acme/demo/pulls' && req.method === 'POST') {
         const b = JSON.parse(body);
@@ -162,6 +163,10 @@ test('gmod ci check: says what is in place and what is missing', async () => {
     r = await spawnSyncAsync(dir, ['ci', 'check', '--token-file', join(dir, 'tok')]);
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /✅ runner shared \(online\) has the label ai-local \(the instance's\)/);
+    // A token without read:admin can't see those: say so, don't say there is none.
+    state.notAdmin = true;
+    r = await spawnSyncAsync(dir, ['ci', 'check', '--token-file', join(dir, 'tok')]);
+    assert.match(r.out, /❌ no runner with the label ai-local in .*; the instance's runners need a token with read:admin/);
   } finally { api.server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
