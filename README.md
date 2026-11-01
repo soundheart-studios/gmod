@@ -1,53 +1,405 @@
 # gmod
 
-Planned work with proof, on plain git. A Claude Code mod, one small CLI, and a CI gate with an AI reviewer. No server.
+**Planned work with proof, for people and AI agents, on plain git.**
 
-- **The plan** is `.gmod/plan.json` in the repository: jobs with a goal, the files each may change, and "done when" criteria that name a check command. Bigger plans group jobs into **phases**, each with an outcome and ordered after other phases: every job of a phase waits for every job of the phases before it.
-- **The mod** keeps an agent honest while it works: it claims a job before editing, changes only that job's files, records a failing run before a passing one, and commits only what passed. A pane and the status line show where the job stands.
-- **CI** keeps everyone honest, mod or not. It checks the pull request names a claimed job, stays in its files, and that its tests pass with the change and **fail without it**. Then an AI reviewer reads the change against the job, its tests and the accepted ADRs.
+You and Claude agree a plan. Agents pick up jobs from it and work in parallel. Every change has to prove itself before it reaches `main`. No server, no special forge: a Claude Code plugin, one small command-line tool, and a CI workflow.
 
-See [DESIGN.md](DESIGN.md) for the why.
+---
+
+## The idea in 30 seconds
+
+```mermaid
+flowchart LR
+    A["📋 Plan<br/>you and Claude agree<br/>the jobs"] --> B["🤖 Work<br/>agents take jobs,<br/>stay in their lane"]
+    B --> C["✅ Prove<br/>CI checks every<br/>pull request"]
+    C --> D["🌳 main<br/>only proven<br/>work lands"]
+    D -. "the next jobs<br/>become ready" .-> B
+```
+
+- **A plan** is a list of small **jobs**. Each says what it achieves, which files it may touch, and how you'll know it's done.
+- **Agents claim jobs** one at a time and can only change that job's files.
+- **Every job proves itself:** its tests fail before the change and pass after it. CI checks that independently, and an AI reviewer reads it.
+- **You decide** what's in the plan and which decisions bind the work. Agents propose; only you approve.
+
+## A job's life, in plain words
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Ready: in the plan, nothing to wait for
+    Ready --> Claimed: an agent takes it
+    Claimed --> Red: it writes a test that fails
+    Red --> Green: it makes the test pass
+    Green --> Committed: it commits, and only then may it
+    Committed --> Pushed: a pull request opens
+    Pushed --> Merged: CI proves it, then it lands
+    Merged --> [*]
+```
+
+The gmod pane in Claude Code shows each job as a row of dots, one per step, so you can see at a glance where everything stands:
+
+```
+                  claim  test  commit  push  merge
+▾ Post basics     2 of 3 · 1 in progress
+  ✓ slugify         ●     ●      ●      ●      ●
+  ◐ slug-unique     ●     ●      ○      ○      ○    agent 1
+  ○ reading-time    ○     ○      ○      ○      ○
+▸ Tags            after post-basics
+```
+
+The test dot turns **red** while failing and **green** once it passes after failing. It turns **amber** if a job passes without ever failing, or stops passing on today's `main`.
+
+---
 
 ## Try it
 
+You need Claude Code, `node` 20 or newer, and `git`.
+
 ```sh
+# load gmod in a session (or add it to every session, below)
 cd <a repository>
 claude --plugin-dir ~/gmod
 ```
 
+Then, in Claude Code:
+
 | You type | What happens |
 |---|---|
-| `/gmod:plan` (+ what you want built) | Claude interviews you and drafts jobs into a **proposal**; the pane shows it beside the plan (`+` new, `~` changed, `−` dropped) |
-| **Approve** · **Ask for changes…** · **Reject** on the pane's proposal card (or `/gmod approve` · `/gmod reject [why]`) | Your decision, and only yours: approve commits `.gmod/plan.json` alone (`plan: add …`); asking sends your note to Claude; reject drops the draft. The card shows why, each job, before → after, the order, Claude's assumptions and warnings. |
-| `/gmod:work` (or just "do the next job") | Claude claims a job, writes a failing test, makes it pass, commits `<job>: …` |
-| "work the ready jobs in parallel" | One subagent per job, each in its own worktree with its own claim, held to its own files |
-| `/gmod` | The pane: progress, **Needs you** (the proposal card, red jobs), and every job on its stage track (claim → red → green → commit → push → merge), across every worktree. Press a row to open it. |
-| `/gmod next` · `claim <job>` · `check` · `release` · `proposal` · `sweep` | The same as the CLI |
-| `/gmod allow-plan` · `lock-plan` | Let the agent edit `.gmod/plan.json` directly (bulk edits), then lock it again |
+| `/gmod:plan` + what you want built | Claude asks a few questions and drafts phases and jobs. You watch them appear in a **proposal card** in the pane. |
+| **Approve** on the card (or `/gmod approve`) | The plan is written and committed on its own. Only you can do this. |
+| `/gmod:work`, or "do the next job" | Claude claims a job: failing test, then passing, then commit, then pull request. |
+| "work the ready jobs in parallel" | One agent per job, each in its own git worktree, each held to its own files. |
+| `/gmod:adr` + a decision | Claude drafts an **architecture decision record**. Once you accept it, it binds every job it covers. |
+| `/gmod:ci` | Sets up the CI gate and reviewer for this repository, and proves it with a real pull request. |
+| `/gmod` | Opens the pane: progress, **Needs you**, and every job's dots. Click a row to see its details. |
 
-Agent tools: `mcp__gmod__next`, `claim`, `check`, `release`, `status` for work; `propose_phase`, `edit_phase`, `drop_phase`, `propose_job`, `edit_job`, `drop_job`, `describe_proposal` for drafting. Each work tool takes an optional `dir` for a subagent in its own worktree.
+To load gmod in every session, including the Claude desktop app, add this to `~/.claude/settings.json`:
 
-At a terminal, the same CLI: `node ~/gmod/bin/gmod.mjs plan | next | claim <job> | check | release | proposal | approve | reject` (`npm link` here puts `gmod` on your PATH).
+```json
+{ "env": { "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/gmod" } }
+```
 
-**What the mod refuses, for the main agent and every subagent:** edits outside the claimed job's files (judged by the repository the file is in); a `git commit` without a failing check first and a passing one on exactly what's committed (checked in the shell that commits); writing `.gmod/plan.json` or gmod's records; moving claims; approving or rejecting the plan.
+In repositories without a `.gmod/plan.json`, gmod stays quiet.
 
-## CI
+---
 
-`/gmod:ci` sets it up and proves it with a real pull request. Underneath, three commands:
+## How it works
+
+From here on it gets more technical.
+
+### The parts
+
+```mermaid
+flowchart TB
+    subgraph you["You"]
+        P["pane, cards,<br/>/gmod commands"]
+    end
+    subgraph claude["Claude Code session"]
+        M["gmod mod<br/>hooks/register.tsx"]
+        S["skills<br/>plan · work · adr · ci"]
+        A["agents and<br/>worktree subagents"]
+    end
+    CLI["gmod command<br/>bin/gmod.mjs + lib/*.mjs<br/><i>every rule lives here</i>"]
+    subgraph repo["git repository"]
+        PL[".gmod/plan.json"]
+        ADR["docs/adr/*.md"]
+        J[".gmod/journal/*.md"]
+        R["refs/gmod/claims/*"]
+    end
+    subgraph forge["GitHub or Gitea"]
+        CI["CI workflow:<br/>gate → review → sweep"]
+        BP["branch protection<br/>on main"]
+        H["claim guard<br/>(Gitea hook)"]
+    end
+    LLM["reviewer:<br/>Claude or a local model"]
+
+    P --> M
+    S --> A
+    A -- "tools and edits<br/>pass through hooks" --> M
+    M --> CLI
+    CLI --> repo
+    repo -- push --> forge
+    CI --> CLI
+    CI --> LLM
+    BP -. "requires the gate" .-> CI
+    H -. "guards" .-> R
+```
+
+**One rulebook, three enforcers.** Every rule is in the `gmod` command (`lib/core.mjs`, `lib/adr.mjs`, `lib/ci.mjs`, `lib/receive.mjs`). The mod, a person at a terminal and CI all call the same code, so an agent hears exactly what CI will say later.
+
+### Where the state lives
+
+There's no database: everything is in git, or in git's own folder on your machine.
+
+| What | Where | Shared? |
+|---|---|---|
+| The plan: phases, jobs, checks, contracts | `.gmod/plan.json` | yes, committed |
+| Decisions | `docs/adr/NNNN-*.md` | yes, committed |
+| Each job's journal | `.gmod/journal/<job>.md` | yes, committed with the job |
+| Claims ("this job is mine") | `refs/gmod/claims/<job>` on origin | yes; the first push wins |
+| "Done" | a commit on `main` whose subject starts `<job>:` | yes |
+| Plan and ADR drafts | `.git/gmod/proposal.json`, `adr-drafts.json` | no, local until approved |
+| Red/green runs, the claim in this worktree | `.git/gmod/` (each worktree has its own) | no; CI re-checks anyway |
+
+A claim is a tiny git ref. Pushing it is the lock: if someone else pushed it first, your push is refused.
+
+### What gets refused, and where
+
+```mermaid
+flowchart LR
+    subgraph edit["While the agent works (mod)"]
+        E1["edit outside the job's files"]
+        E2["commit without red, then green"]
+        E3["write the plan, ADRs or gmod's records"]
+        E4["move a claim, or approve anything"]
+    end
+    subgraph push["When it's pushed (Gitea hook)"]
+        P1["move a claim"]
+        P2["let go of someone else's claim"]
+    end
+    subgraph merge["Before it merges (CI + protection)"]
+        M1["job not in main's plan, or not claimed"]
+        M2["commits not by the claimant"]
+        M3["files outside the job"]
+        M4["tests don't fail without the change"]
+        M5["branch behind main"]
+        M6["plan, ADR or CI changes mixed with code"]
+    end
+    edit --> push --> merge
+```
+
+Each layer catches different things:
+- **The mod** gives immediate, worded feedback to Claude's agents and their subagents. Edits are judged by the repository the file is actually in.
+- **The hook** covers anyone pushing, Claude or not, for the one kind of ref branch protection can't see.
+- **CI plus branch protection** is final. Nothing reaches `main` without it, whoever wrote the code.
+
+### Planning and approving
+
+```mermaid
+sequenceDiagram
+    actor You
+    participant C as Claude
+    participant G as gmod
+    participant F as forge (CI)
+    You->>C: /gmod:plan "tags for posts"
+    C->>G: propose_phase / propose_job / describe_proposal
+    G-->>You: proposal card in the pane (why, jobs, order, assumptions, warnings)
+    You->>G: Suggest a change… ("keep tags as typed")
+    G->>C: your note
+    C->>G: edit_job
+    You->>G: Approve
+    G->>G: write .gmod/plan.json, commit it alone ("plan: add …")
+    G->>F: plan-only pull request
+    F-->>You: gate passes, then the owners (CODEOWNERS) review
+```
+
+- **Drafts can be unfinished while Claude builds them,** for example a phase with no jobs yet. The card then says "not ready to approve" and hides **Approve**.
+- **gmod works out warnings itself:** two jobs that change the same files can't run side by side, and a job with no tests can't be proven.
+- **Phases group jobs under an outcome.** "Phase B after phase A" means every job in B waits for every job in A. A phase is done when all its jobs are on `main`.
+
+### Doing a job
+
+```mermaid
+sequenceDiagram
+    participant A as agent
+    participant G as gmod (mod + CLI)
+    participant O as origin
+    participant F as CI
+    A->>G: claim job
+    G->>O: push refs/gmod/claims/job (first wins)
+    G-->>A: claimed: branch gmod/job, its files, its ADR rules
+    A->>A: write the test
+    A->>G: check → red (recorded)
+    A->>A: write the code (edits outside the job are refused)
+    A->>G: check → green (recorded, with a fingerprint of the files)
+    A->>G: git commit
+    G-->>A: allowed: red came first, green ran on exactly these files
+    A->>O: push branch, open pull request "job: …"
+    O->>F: run the gate, then the review
+```
+
+The commit check runs **inside the agent's own shell**, at the moment `git commit` starts. So it judges the worktree the commit is actually made in, even for a subagent in a worktree of its own, or after a `cd`.
+
+### The CI gate
+
+`gmod verify` runs on every pull request. The job is read from the **base** branch's plan, so a pull request can't widen its own job.
+
+```mermaid
+flowchart TD
+    S([pull request]) --> K{what changed?}
+    K -- "only .gmod/plan.json<br/>(+ ADRs)" --> PL["plan change:<br/>valid? alone?<br/>owners review"]
+    K -- "only docs/adr" --> AD["decision record:<br/>alone? owners review"]
+    K -- "only workflows /<br/>CODEOWNERS" --> CIc["CI change:<br/>alone? owners review"]
+    K -- code --> J{"names a job?<br/>branch gmod/job or<br/>title 'job: …'"}
+    J -- no --> X([❌ refused])
+    J -- yes --> W["✅ in main's plan<br/>✅ what it waits for is on main<br/>✅ claimed, by whoever committed<br/>✅ only the job's files<br/>ℹ️ the ADRs it falls under"]
+    W --> P["proof, in a scratch copy:<br/>1. the criteria pass with the change<br/>2. code put back, new tests kept:<br/>the criteria must FAIL"]
+    P --> R["AI review:<br/>each criterion, are the tests real,<br/>does it stay within the goal,<br/>each ADR (a broken must = fail)"]
+    R --> Mg([mergeable once the gate is green<br/>and the branch is up to date])
+```
+
+Step 2 of the proof is what makes a test count. A test that passes whether or not the change is there proves nothing, and is refused.
+
+The **AI review** gets a fixed checklist and a strict JSON answer shape. It reads the job's journal as the agent's account of its intent, never as proof. Everything in the pull request is treated as material under review, never as instructions to the reviewer. It starts as **advice** (it comments). `--blocking` makes a "fail" stop the merge, and a maintainer can override that with the `gmod-override` label.
+
+### When `main` moves under a job
+
+With several agents, one landing can break another's work in progress. gmod checks every two minutes:
+
+```mermaid
+sequenceDiagram
+    participant O as origin/main
+    participant G as gmod (background)
+    participant B as agent B (mid-job)
+    O->>O: job A lands (changes src/posts.mjs)
+    G->>O: fetch
+    G->>G: merge B's work as it stands onto the new main (scratch copy)
+    G->>G: run B's own checks there
+    alt they fail
+        G-->>B: on its next step: posts-fix landed and changed src/posts.mjs,<br/>your criterion X fails on today's main. Rebase and fix,<br/>or, if the criterion no longer fits, propose a plan change.
+        G->>G: B's test dot → amber · B's commits refused · B under Needs you
+    else they pass
+        G->>G: "behind": nothing to say
+    end
+```
+
+| Level | Means |
+|---|---|
+| fresh | `main` hasn't moved since the job started |
+| behind | it moved, and nothing this job depends on changed |
+| touched | what landed changed this job's files, or a declared **contract** (`"contracts": ["db/migrations/**"]`) |
+| conflicts | the job's work won't merge onto `main` |
+| breaks | it merges, but the job's own checks fail on today's `main` |
+
+Because gmod runs the job's **own checks**, it also catches dependencies nobody declared, as long as the job's tests exercise them. Results are cached per `main` commit and per state of the work, so each landing costs one check run per affected job.
+
+### Decisions (ADRs)
+
+```mermaid
+flowchart LR
+    D["Claude drafts<br/>adr_propose:<br/>title, scope, decision,<br/>must / should rules"] --> Y{"you"}
+    Y -- Accept --> N["docs/adr/0003-….md<br/>numbered, committed alone;<br/>supersedes the old one"]
+    Y -- Reject --> Z([dropped])
+    N --> P1["agent prompt:<br/>the rules of ADRs<br/>covering its job"]
+    N --> P2["gate:<br/>'falls under ADR 0003'"]
+    N --> P3["review:<br/>answers each ADR;<br/>broken must = fail"]
+```
+
+Each ADR has a **scope**, the globs of the files it governs, so it only binds the work it's about. Agents can't edit ADR files; decisions change only through a new draft that supersedes the old one.
+
+### The journal
+
+Each job keeps `.gmod/journal/<job>.md`. The agent writes notes there (intent, decisions, dead ends), and every check adds its red or green. It's committed with the job's pull request, so the reviewer and anyone reading `main` later can see why things were done.
+
+---
+
+## Setting up CI
+
+`/gmod:ci` walks through it. Underneath:
 
 ```sh
-gmod ci init --reviewer claude --gmod-repo your-org/gmod@v0.2.0          # GitHub, hosted runners
+# GitHub, hosted runners, Claude reviewing
+gmod ci init --reviewer claude --gmod-repo your-org/gmod@v0.2.0 --owners @your-team
+gmod ci protect                      # through gh
+
+# Gitea, a self-hosted runner, a local model reviewing
 gmod ci init --reviewer local --review-url http://127.0.0.1:8080/v1 \
-             --runs-on ai-local --gmod-home /home/me/gmod                  # Gitea, a self-hosted runner
-gmod ci protect [--token-file <gitea token>]   # require the gate on up-to-date branches; no direct pushes
-gmod ci check   [--token-file <gitea token>]   # workflow, protection, runner, reviewer: what's missing
+             --runs-on my-runner --gmod-home /opt/gmod --owners @me
+gmod ci protect --token-file ~/.gitea-token
+gmod ci guard-claims --repo-path /var/lib/gitea/repos/me/app.git   # on the Gitea machine
+
+gmod ci check --token-file ~/.gitea-token
+# ✅ the workflow is in .gitea/workflows/gmod.yml
+# ✅ main requires the gate and up-to-date branches
+# ✅ runner my-runner (online) has the label my-runner (the instance's)
+# ✅ the reviewer answers at http://127.0.0.1:8080/v1
 ```
 
-The review starts as advice (`--blocking` makes it a gate); a maintainer overrides a fail with the `gmod-override` label. `--owners @a,@b` writes CODEOWNERS for `.gmod/`. Commit the workflow before protecting main.
+Commit the workflow **before** `ci protect`. Once `main` is protected, CI changes go through a pull request of their own, and the owners review it.
 
-## Tests
+The reviewer works with Claude (`ANTHROPIC_API_KEY`) or any OpenAI-compatible endpoint, such as llama.cpp, Ollama or vLLM (`GMOD_REVIEW_URL`, `GMOD_REVIEW_MODEL`). Local models get one retry when an answer comes back malformed.
+
+---
+
+## Reference
+
+### Slash commands and agent tools
+
+| For you | |
+|---|---|
+| `/gmod` | the pane |
+| `/gmod approve` · `reject [why]` | the plan proposal (you only) |
+| `/gmod adr accept <draft>` · `adr reject <draft>` | decision drafts (you only) |
+| `/gmod next` · `claim <job>` · `check` · `release` · `proposal` · `sweep` | as the CLI |
+| `/gmod allow-plan` · `lock-plan` | let the agent edit the plan file directly, for bulk edits |
+| `/gmod:plan` · `/gmod:work` · `/gmod:adr` · `/gmod:ci` | the skills |
+
+| For agents (`mcp__gmod__…`) | |
+|---|---|
+| `next` · `claim` · `check` · `release` · `status` · `note` | doing work; each takes `dir` for a worktree of its own |
+| `propose_phase` · `edit_phase` · `drop_phase` | drafting phases |
+| `propose_job` · `edit_job` · `drop_job` · `describe_proposal` | drafting jobs |
+| `adr_propose` | drafting a decision |
+
+### The command line
+
+`node ~/gmod/bin/gmod.mjs <command>`, or `gmod` after `npm link` in this folder. Add `--json` for machine-readable output. The exit status is 0 for yes/done and 1 for refused.
+
+| Area | Commands |
+|---|---|
+| Plan | `init` · `plan` · `next` · `proposal` · `propose-phase` · `edit-phase` · `drop-phase` · `propose-job` · `edit-job` · `drop-job` · `describe-proposal` · `approve` · `reject` |
+| Work | `claim` · `release` · `check` · `note` · `gate-commit` · `guard-path` · `status` |
+| Main moved | `moved [--run]` · `notice <path>` |
+| Decisions | `adr propose` · `adr drafts` · `adr accept` · `adr reject` · `adr list` · `adr for <path>` |
+| CI | `verify` · `prove` · `sweep` · `ci init` · `ci protect` · `ci check` · `ci guard-claims` · `receive` |
+
+### A plan
+
+```json
+{
+  "main": "main",
+  "adr_dir": "docs/adr",
+  "contracts": ["db/migrations/**"],
+  "checks": { "slug": "node test/slug.test.mjs" },
+  "phases": [
+    { "id": "post-basics", "title": "Post basics", "outcome": "Every post has its own URL slug" }
+  ],
+  "jobs": [
+    {
+      "id": "slugify",
+      "phase": "post-basics",
+      "goal": "Turn a title into a URL slug",
+      "brief": "src/slug.mjs; lowercase, dashes, no punctuation.",
+      "files": ["src/slug.mjs"],
+      "tests": ["test/slug.test.mjs"],
+      "done_when": [{ "text": "\"Hello, World!\" becomes \"hello-world\"", "check": "slug" }],
+      "after": []
+    }
+  ]
+}
+```
+
+`files` is what the job may change, and `tests` is where its tests go. They're kept apart so CI can put the code back while keeping the tests. A check is a shell command that exits 0 when its criterion holds.
+
+---
+
+## Limits, and what's next
+
+- **Enforcement is at merge, not at push,** except for claims. `main` is protected, so that's where it counts.
+- **"Breaks on main" sees only what a job's tests exercise.**
+- **Identities are git emails.** Agents commit as the person they work for.
+- **Gitea has no merge queue,** so many agents merging at once means many rebases.
+- **One repository per plan.**
+
+[ROADMAP.md](ROADMAP.md) covers what's deliberately left for later, and when each becomes worth doing. [DESIGN.md](DESIGN.md) has the reasoning behind the shape.
+
+## Development
 
 ```sh
-npm test                        # the CLI, end to end, against real git repositories
-claude plugin test ~/gmod       # the mod's hooks
+npm test                                   # CLI, CI and claim-guard tests, against real git repositories
+claude plugin test ~/gmod                  # the mod's hooks and pane
+GMOD_REVIEW_URL=http://host:8080/v1 \
+  node --test test/review-live.test.mjs    # the reviewer against a real model (opt-in)
 ```
+
+The pane must draw on every Claude Code surface, including the desktop app, which may run an older engine. Run the mod tests with that engine too.
