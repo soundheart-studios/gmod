@@ -31,17 +31,19 @@ At a terminal, the same CLI: `node ~/gmod/bin/gmod.mjs plan | next | claim <job>
 
 **What the mod refuses, for the main agent and every subagent:** edits outside the claimed job's files (judged by the repository the file is in); a `git commit` without a failing check first and a passing one on exactly what's committed (checked in the shell that commits); writing `.gmod/plan.json` or gmod's records; moving claims; approving or rejecting the plan.
 
-## CI (GitHub)
+## CI
 
-1. Copy `ci/github/gmod.yml` to `.github/workflows/`, replacing `your-org/gmod` with where this folder lives.
-2. Add `ANTHROPIC_API_KEY` as a repository secret, for the review.
-3. Copy `ci/github/CODEOWNERS.example` into `CODEOWNERS`: the plan's owners approve plan changes.
-4. Protect main:
-   - require pull requests and the `gmod / gate` check (and `gmod / review` if you want it to block);
-   - require code-owner review;
-   - use a merge queue.
+`/gmod:ci` sets it up and proves it with a real pull request. Underneath, three commands:
 
-A maintainer overrides a review "fail" with the `gmod-override` label. The gate itself has no override.
+```sh
+gmod ci init --reviewer claude --gmod-repo your-org/gmod@v0.2.0          # GitHub, hosted runners
+gmod ci init --reviewer local --review-url http://127.0.0.1:8080/v1 \
+             --runs-on ai-local --gmod-home /home/me/gmod                  # Gitea, a self-hosted runner
+gmod ci protect [--token-file <gitea token>]   # require the gate on up-to-date branches; no direct pushes
+gmod ci check   [--token-file <gitea token>]   # workflow, protection, runner, reviewer: what's missing
+```
+
+The review starts as advice (`--blocking` makes it a gate); a maintainer overrides a fail with the `gmod-override` label. `--owners @a,@b` writes CODEOWNERS for `.gmod/`. Commit the workflow before protecting main.
 
 ## Tests
 

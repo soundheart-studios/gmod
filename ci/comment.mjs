@@ -20,7 +20,7 @@ if (!flags.marker || !flags.file) {
   console.error('ci/comment.mjs --marker <name> --file <markdown>');
   process.exit(2);
 }
-if (!server || !repo || !pr || !token) {
+if ((!server && !process.env.GITHUB_API_URL) || !repo || !pr || !token) {
   console.log('comment: not in a pull request with a token; skipped');
   process.exit(0);
 }
@@ -31,7 +31,8 @@ if (!existsSync(flags.file)) {
 
 const marker = `<!-- ${flags.marker} -->`;
 const body = `${marker}\n${readFileSync(flags.file, 'utf8')}`;
-const api = `${server}/api/v1/repos/${repo}`;
+// GitHub and Gitea both say where their API is; Gitea's is under /api/v1.
+const api = `${(process.env.GITHUB_API_URL || `${server}/api/v1`).replace(/\/$/, '')}/repos/${repo}`;
 const headers = { authorization: `token ${token}`, 'content-type': 'application/json', accept: 'application/json' };
 
 const res = await fetch(`${api}/issues/${pr}/comments`, { headers });

@@ -2,6 +2,7 @@
 // gmod: plan, claim, check and prove work; the same command for people,
 // the Claude Code mod and CI.
 import * as core from '../lib/core.mjs';
+import * as ci from '../lib/ci.mjs';
 
 const HELP = `gmod: planned work with proof, on plain git
 
@@ -38,6 +39,15 @@ const HELP = `gmod: planned work with proof, on plain git
                                   the work merged onto today's main
   gmod notice <path>              what the agent working at <path> should hear, once
   gmod sweep                      let go of claims on jobs done on main
+
+  gmod ci init [--runs-on <label>] (--gmod-home <path> | --gmod-repo <owner/repo>[@ref] [--gmod-token-secret <name>])
+               [--reviewer claude|local|none] [--review-url <url>] [--review-model <m>] [--blocking]
+               [--owners @a,@b] [--url <gitea web address>] [--force]
+                                  write the CI workflow (and CODEOWNERS) for this repository's forge
+  gmod ci protect [--token-file <f>] [--url <u>] [--code-owners]
+                                  require the gate and up-to-date branches on main; no direct pushes
+  gmod ci check [--token-file <f>] [--url <u>]
+                                  is the workflow, protection, runner and reviewer in place?
   gmod status                     everything above, as JSON
 
   --json prints JSON. Exit status 0 means yes / done, 1 means refused.`;
@@ -48,7 +58,7 @@ function parse(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith('--')) rest.push(a);
-    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch'].includes(a)) flags[a.slice(2)] = true;
+    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners'].includes(a)) flags[a.slice(2)] = true;
     else flags[a.slice(2)] = argv[++i];
   }
   return { cmd: rest[0], args: rest.slice(1), flags };
@@ -80,6 +90,7 @@ async function main() {
     return r.ok ? 0 : 1;
   }
   const root = core.repoRoot();
+  if (cmd === 'ci') return runCi(root, args[0], flags);
   switch (cmd) {
     case 'init': {
       const r = core.init(root);
@@ -214,6 +225,39 @@ async function main() {
     default:
       throw new core.GmodError(`unknown command ${cmd}\n\n${HELP}`);
   }
+}
+
+async function runCi(root, sub, flags) {
+  const token = flags['token-file'] ? (await import('node:fs')).readFileSync(flags['token-file'], 'utf8').trim() : process.env.GITEA_TOKEN;
+  const main = flags.main ?? core.planFromDisk(root)?.main ?? 'main';
+  if (sub === 'init') {
+    const [repo, ref] = (flags['gmod-repo'] ?? '').split('@');
+    if (!flags['gmod-home'] && !repo) throw new core.GmodError('where should CI get gmod? --gmod-home <path on the runner> or --gmod-repo <owner/repo>[@ref]');
+    const kind = flags.reviewer ?? (flags['review-url'] ? 'local' : 'none');
+    if (kind === 'local' && !flags['review-url']) throw new core.GmodError('a local reviewer needs --review-url (an OpenAI-compatible /v1 address)');
+    const r = ci.ciInit(root, {
+      url: flags.url,
+      runsOn: flags['runs-on'],
+      gmod: flags['gmod-home'] ? { path: flags['gmod-home'] } : { repo, ref, token: flags['gmod-token-secret'] },
+      reviewer: kind === 'local' ? { kind, url: flags['review-url'], model: flags['review-model'] } : { kind },
+      blocking: !!flags.blocking,
+      owners: flags.owners ? flags.owners.split(',').map(x => x.trim()).filter(Boolean) : [],
+      main,
+      force: !!flags.force,
+    });
+    const next = r.forge.kind === 'github' ? 'commit it, then: gmod ci protect' : 'commit it, then: gmod ci protect --token-file <file>';
+    return out(flags, r, `${r.files.map(f => `wrote ${f}`).join('\n')}\n${r.forge.kind} ${r.forge.owner}/${r.forge.repo}: ${next}`);
+  }
+  if (sub === 'protect') {
+    const r = await ci.ciProtect(root, { url: flags.url, token, main, codeOwners: !!flags['code-owners'] });
+    return out(flags, r, `${main} on ${r.forge.owner}/${r.forge.repo}: the gate required, branches must be up to date, no direct pushes`);
+  }
+  if (sub === 'check') {
+    const r = await ci.ciCheck(root, { url: flags.url, token, main });
+    out(flags, r, r.findings.map(f => `${f.ok ? '✅' : '❌'} ${f.msg}`).join('\n'));
+    return r.ok ? 0 : 1;
+  }
+  throw new core.GmodError('gmod ci init | protect | check');
 }
 
 try {

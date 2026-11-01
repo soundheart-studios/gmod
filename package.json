@@ -4,7 +4,7 @@
   "description": "Planned work with proof on plain git: a Claude Code mod, a CLI, and a CI gate with an AI reviewer.",
   "type": "module",
   "bin": { "gmod": "bin/gmod.mjs" },
-  "scripts": { "test": "node --test test/*.test.mjs" },
+  "scripts": { "test": "node --test test/cli.test.mjs test/ci.test.mjs" },
   "engines": { "node": ">=20" },
   "dependencies": { "@anthropic-ai/sdk": "^1.3.0" }
 }
