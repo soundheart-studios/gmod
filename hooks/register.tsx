@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { GmodJob, GmodPhase, GmodProposal, GmodStatus } from '../types'
 import { decidesPlan, movesClaims, writesPlan, writesRecords } from './shell'
@@ -74,6 +74,18 @@ function arg(e: unknown, key: string): string {
   return typeof v === 'string' ? v : v === undefined ? '' : JSON.stringify(v)
 }
 
+// Main moved under a job: the agent hears it on its next step, from the
+// folder that step ran in, so a subagent in its own worktree hears about its
+// own job. Only asked when some job is affected at all.
+const MOVED_LEVELS = ['touched', 'conflicts', 'breaks']
+async function withNotice<R extends ToolCallResult>($: EngineInterface, ran: R, path: string): Promise<R> {
+  if (ran.deny !== undefined || !path) return ran
+  const s = await read($, status)
+  if (!(s?.jobs ?? []).some(j => j.moved && MOVED_LEVELS.includes(j.moved.level))) return ran
+  const said = (await gmod($, ['notice', path])).stdout.trim()
+  return said ? { ...ran, context: [...(ran.context ?? []), said] } : ran
+}
+
 async function guard($: EngineInterface, path: string): Promise<string | null> {
   const r = await gmod($, ['guard-path', path, ...((await read($, allowPlan)) ? ['--allow-plan'] : [])])
   return r.exitCode === 0 ? null : `gmod: ${text(r)}`
@@ -92,6 +104,7 @@ function gated(cli: string, command: string): string {
 const ID_MIN = 8
 const ID_MAX = 20
 const NOTE_ROOM = 12
+const MOVED_EVERY = 120_000
 const GAP = 2
 const STEPS_WIDTH = STEPS.reduce((n, name) => n + name.length + GAP, 0)
 
@@ -99,7 +112,8 @@ type Dot = { filled: boolean; color?: 'green' | 'red' | 'yellow' }
 
 function dots(j: GmodJob): Dot[] {
   const done = j.state === 'done'
-  const test = done ? undefined : ({ none: undefined, red: 'red', green: 'green', unproven: 'yellow' } as const)[j.tests]
+  // Passing here but failing on today's main: proven no longer.
+  const test = done ? undefined : j.moved?.level === 'breaks' ? 'yellow' : ({ none: undefined, red: 'red', green: 'green', unproven: 'yellow' } as const)[j.tests]
   return [
     { filled: done || j.stage >= 1 },
     { filled: done || j.tests !== 'none', color: test },
@@ -165,6 +179,12 @@ export const register: Register = on => {
     await $.tool.register({ name: 'describe_proposal', description: 'Say what the plan proposal is for, in one short plain sentence (under 25 words) a non-engineer understands, and list the assumptions the person is really approving (choices you made that they might not have). Shown at the top of the proposal card.', inputSchema: { type: 'object', properties: { summary: { type: 'string' }, assumptions: { type: 'array', items: { type: 'string' } } } }, isDeferred: false })
     const s = await refresh($, true)
     if ((s?.governed || s?.proposal) && (await $.session.surfaces()).length) void $.ui.open({ id: PANE, title: 'gmod' })
+    // Every two minutes: fetch main, and run the checks of any job a landing
+    // touched, on its work merged onto the new main.
+    if (s?.governed) $.clock.every(MOVED_EVERY, async () => {
+      await gmod($, ['moved', '--run', '--json'])
+      await refresh($)
+    })
     return next(e)
   })
 
@@ -179,7 +199,7 @@ export const register: Register = on => {
   on('tool.call', { tool: 'mcp__gmod__check' }, async ($, e) => {
     const r = await gmod($, ['check'], arg(e, 'dir'))
     await refresh($)
-    return { result: text(r) }
+    return withNotice($, { result: text(r) } as ToolCallResult, arg(e, 'dir') || (await $.session.cwd()))
   })
   on('tool.call', { tool: 'mcp__gmod__release' }, async ($, e) => {
     const r = await gmod($, ['release'], arg(e, 'dir'))
@@ -240,17 +260,17 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'Edit' }, async ($, e, next) => {
     const refused = await guard($, e.file_path)
-    return refused ? { deny: refused } : next(e)
+    return refused ? { deny: refused } : withNotice($, await next(e), e.file_path)
   }).catch(($, e, next) => (next.called ? next(e) : { deny: 'gmod: its file guard failed; nothing was changed' }))
 
   on('tool.call', { tool: 'Write' }, async ($, e, next) => {
     const refused = await guard($, e.file_path)
-    return refused ? { deny: refused } : next(e)
+    return refused ? { deny: refused } : withNotice($, await next(e), e.file_path)
   }).catch(($, e, next) => (next.called ? next(e) : { deny: 'gmod: its file guard failed; nothing was changed' }))
 
   on('tool.call', { tool: 'NotebookEdit' }, async ($, e, next) => {
     const refused = await guard($, e.notebook_path)
-    return refused ? { deny: refused } : next(e)
+    return refused ? { deny: refused } : withNotice($, await next(e), e.notebook_path)
   }).catch(($, e, next) => (next.called ? next(e) : { deny: 'gmod: its file guard failed; nothing was changed' }))
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
@@ -264,7 +284,7 @@ export const register: Register = on => {
     const command = /\bcommit\b/.test(cmd) ? gated(`${$.plugin.root}/bin/gmod.mjs`, cmd) : cmd
     const ran = await next(command === cmd ? e : { ...e, command })
     if (/\bgit\b|gmod/.test(cmd)) await refresh($)
-    return ran
+    return withNotice($, ran, await $.session.cwd())
   }).catch(($, e, next) => (next.called ? next(e) : { deny: 'gmod: its command guard failed; nothing ran' }))
 
   // A subagent is told the routine in its own prompt.
@@ -564,7 +584,9 @@ export const register: Register = on => {
       jobs.map(j => {
         // A job whose whole phase waits says nothing: its heading does.
         const phaseWaits = (s.phases ?? []).some(ph => ph.id === j.phase && ph.state === 'waiting')
-        const raw = j.state === 'waiting' ? (phaseWaits ? '' : `after ${j.waiting.join(', ')}`) : j.state === 'claimed' ? (j.where === 'here' ? 'you' : j.where && j.where !== 'elsewhere' ? j.where : (j.by ?? '')) : ''
+        const moved = j.moved?.level === 'breaks' ? '✗ breaks on main · ' : j.moved?.level === 'conflicts' ? '✗ conflicts · ' : j.moved?.level === 'touched' ? '⚠ main moved · ' : ''
+        const who = j.state === 'waiting' ? (phaseWaits ? '' : `after ${j.waiting.join(', ')}`) : j.state === 'claimed' ? (j.where === 'here' ? 'you' : j.where && j.where !== 'elsewhere' ? j.where : (j.by ?? '')) : ''
+        const raw = (moved + who).replace(/ · $/, '')
         return [j.id, raw.replace(/ /g, '\u00a0')] as const
       }),
     )
@@ -668,7 +690,8 @@ export const register: Register = on => {
       )
     }
 
-    const needs = Boolean(p) || stalled.length > 0
+    const broken = jobs.filter(j => j.moved && ['conflicts', 'breaks'].includes(j.moved.level))
+    const needs = Boolean(p) || stalled.length > 0 || broken.length > 0
     return (
       <Box flexDirection="column">
         <Text>
@@ -685,6 +708,15 @@ export const register: Register = on => {
             {p && card(p)}
             {stalled.map(j => (
               <Text key={`stall${j.id}`} color="red" wrap="wrap">! {j.id} is red{j.where && j.where !== 'here' ? ` in ${j.where}` : ''}: its criteria still fail</Text>
+            ))}
+            {broken.map(j => (
+              <Text key={`moved${j.id}`} color="red" wrap="wrap">
+                ! {j.id}
+                {j.moved!.level === 'breaks'
+                  ? ` fails on today's main: ${j.moved!.landed.join(', ') || 'main'} changed ${j.moved!.touched.join(', ')}`
+                  : ` conflicts with main in ${j.moved!.conflicts.join(', ')}`}
+                {j.where && j.where !== 'here' ? ` (${j.where})` : ''}: rebase onto main
+              </Text>
             ))}
           </Box>
         )}

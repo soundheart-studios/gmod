@@ -34,6 +34,9 @@ const HELP = `gmod: planned work with proof, on plain git
                                   the tests fail without the change
   gmod verify --base <ref> [--head <ref>] [--branch <name>] [--title <text>] [--report <file>]
                                   the CI gate for one pull request
+  gmod moved [--run] [--no-fetch] did main move under each worktree's job? --run checks
+                                  the work merged onto today's main
+  gmod notice <path>              what the agent working at <path> should hear, once
   gmod sweep                      let go of claims on jobs done on main
   gmod status                     everything above, as JSON
 
@@ -45,7 +48,7 @@ function parse(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith('--')) rest.push(a);
-    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell'].includes(a)) flags[a.slice(2)] = true;
+    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch'].includes(a)) flags[a.slice(2)] = true;
     else flags[a.slice(2)] = argv[++i];
   }
   return { cmd: rest[0], args: rest.slice(1), flags };
@@ -66,6 +69,10 @@ function out(flags, value, text) {
 async function main() {
   const { cmd, args, flags } = parse(process.argv.slice(2));
   if (!cmd || cmd === 'help' || flags.help) return void console.log(HELP);
+  if (cmd === 'notice') {
+    process.stdout.write(core.notice(args[0] ?? '.'));
+    return 0;
+  }
   if (cmd === 'guard-path') {
     if (!args[0]) throw new core.GmodError('gmod guard-path <path>');
     const r = core.guardFile(args[0], { allowPlan: !!flags['allow-plan'] });
@@ -191,6 +198,12 @@ async function main() {
       if (flags.report) (await import('node:fs')).writeFileSync(flags.report, md + '\n');
       out(flags, r, md);
       return r.ok ? 0 : 1;
+    }
+    case 'moved': {
+      const plan = core.planFromDisk(root);
+      if (!plan) throw new core.GmodError(`no ${core.PLAN} here`);
+      const list = core.moved(root, plan, { run: !!flags.run, fetch: !flags['no-fetch'] });
+      return out(flags, list, list.map(m => `${m.job}: ${m.level}${m.behind ? ` (${m.behind} behind)` : ''}${m.touched.length ? ` · touched ${m.touched.join(', ')}` : ''}${m.conflicts.length ? ` · conflicts ${m.conflicts.join(', ')}` : ''}${m.failing.length ? ` · fails: ${m.failing.join('; ')}` : ''}`).join('\n') || 'no claimed jobs here');
     }
     case 'sweep': {
       const r = core.sweep(root);

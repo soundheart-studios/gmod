@@ -401,3 +401,107 @@ test('phases: drafted a step at a time, approved only once whole', () => {
     assert.match(yes.out, /approved: add phase basics; change add-sum, add-mul/);
   } finally { w.done(); }
 });
+
+// ---- main moved under you ----
+
+const SHARED = {
+  main: 'main',
+  contracts: ['src/schema.mjs'],
+  checks: { cols: 'node test/b.test.mjs', ok: 'true' },
+  jobs: [
+    { id: 'rename-field', goal: 'Rename the field', files: ['src/schema.mjs', 'src/shared.mjs'], tests: ['test/x.test.mjs'], done_when: [{ text: 'renamed', check: 'ok' }] },
+    { id: 'columns', goal: 'List the columns', files: ['src/b.mjs', 'src/shared.mjs'], tests: ['test/b.test.mjs'], done_when: [{ text: 'columns are the fields', check: 'cols' }] },
+  ],
+};
+
+function sharedWorld() {
+  const w = world();
+  write(w.alice, {
+    '.gmod/plan.json': JSON.stringify(SHARED),
+    'src/schema.mjs': "export const FIELDS = ['title'];\n",
+    'src/shared.mjs': 'export const shared = 1;\n',
+  });
+  sh(w.alice, 'git', ['add', '-A']);
+  sh(w.alice, 'git', ['commit', '-q', '-m', 'shared plan']);
+  sh(w.alice, 'git', ['push', '-q', 'origin', 'HEAD:main']);
+  sh(w.bob, 'git', ['pull', '-q', 'origin', 'main']);
+  // bob works on columns, built on the schema, red then green.
+  gmod(w.bob, 'claim', 'columns', '--no-branch');
+  write(w.bob, { 'test/b.test.mjs': "import { columns } from '../src/b.mjs';\nif (columns() !== 'title') { console.error('columns are', columns()); process.exit(1); }\n" });
+  gmod(w.bob, 'check');
+  write(w.bob, { 'src/b.mjs': "import { FIELDS } from './schema.mjs';\nexport const columns = () => FIELDS.join(',');\n" });
+  assert.equal(gmod(w.bob, 'check').code, 0);
+  return w;
+}
+
+const movedOf = (dir, ...extra) => JSON.parse(gmod(dir, 'moved', '--json', ...extra).out).find(m => m.job === 'columns');
+function land(w, files, subject) {
+  sh(w.alice, 'git', ['pull', '-q', 'origin', 'main']);
+  write(w.alice, files);
+  sh(w.alice, 'git', ['add', '-A']);
+  sh(w.alice, 'git', ['commit', '-q', '-m', subject]);
+  sh(w.alice, 'git', ['push', '-q', 'origin', 'HEAD:main']);
+}
+
+test('moved under you: fresh, then behind when something unrelated lands', () => {
+  const w = sharedWorld();
+  try {
+    assert.equal(movedOf(w.bob).level, 'fresh');
+    land(w, { 'README': 'more\n' }, 'docs: a readme');
+    const m = movedOf(w.bob);
+    assert.deepEqual([m.level, m.behind], ['behind', 1]);
+    assert.equal(gmod(w.bob, 'notice', join(w.bob, 'src/b.mjs')).out, '', 'nothing worth saying');
+  } finally { w.done(); }
+});
+
+test('moved under you: a contract changes, and the job breaks on it', () => {
+  const w = sharedWorld();
+  try {
+    land(w, { 'src/schema.mjs': "export const FIELDS = ['name'];\n" }, 'rename-field: title is now name');
+    // Without running the checks: touched, naming what landed and what it changed.
+    let m = movedOf(w.bob);
+    assert.deepEqual([m.level, m.landed, m.touched, m.checked], ['touched', ['rename-field'], ['src/schema.mjs'], false]);
+    // Running them on the work merged onto the new main: it breaks.
+    m = movedOf(w.bob, '--run');
+    assert.deepEqual([m.level, m.failing], ['breaks', ['columns are the fields']]);
+    // Remembered: no need to run again for the same main and the same work.
+    assert.equal(movedOf(w.bob).level, 'breaks');
+
+    // The agent is told once, on its next step, in words.
+    const told = gmod(w.bob, 'notice', join(w.bob, 'src/b.mjs')).out;
+    assert.match(told, /rename-field landed on main and changed src\/schema\.mjs/);
+    assert.match(told, /columns are the fields.*fails/);
+    assert.match(told, /Rebase onto origin\/main/);
+    assert.equal(gmod(w.bob, 'notice', join(w.bob, 'src/b.mjs')).out, '', 'told once');
+
+    // A commit is refused while it breaks.
+    assert.match(gmod(w.bob, 'gate-commit').out, /fails on today's main/);
+
+    // Rebased onto the new main and fixed, it's fresh again.
+    sh(w.bob, 'git', ['add', '-A']);
+    sh(w.bob, 'git', ['commit', '-q', '--no-verify', '-m', 'columns: wip']);
+    sh(w.bob, 'git', ['pull', '-q', '--rebase', 'origin', 'main']);
+    assert.equal(movedOf(w.bob).level, 'fresh');
+  } finally { w.done(); }
+});
+
+test('moved under you: what landed conflicts with the work in progress', () => {
+  const w = sharedWorld();
+  try {
+    write(w.bob, { 'src/shared.mjs': 'export const shared = 2;\n' });
+    land(w, { 'src/shared.mjs': 'export const shared = 3;\n' }, 'rename-field: bump shared');
+    const m = movedOf(w.bob);
+    assert.deepEqual([m.level, m.conflicts], ['conflicts', ['src/shared.mjs']]);
+    assert.match(gmod(w.bob, 'notice', w.bob).out, /conflicts with main in src\/shared\.mjs/);
+  } finally { w.done(); }
+});
+
+test('moved under you: the board carries it for the pane', () => {
+  const w = sharedWorld();
+  try {
+    land(w, { 'src/schema.mjs': "export const FIELDS = ['name'];\n" }, 'rename-field: title is now name');
+    gmod(w.bob, 'moved', '--run');
+    const job = JSON.parse(gmod(w.bob, 'status', '--no-sync').out).jobs.find(j => j.id === 'columns');
+    assert.deepEqual([job.moved.level, job.moved.landed, job.moved.failing], ['breaks', ['rename-field'], ['columns are the fields']]);
+  } finally { w.done(); }
+});

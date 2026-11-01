@@ -361,3 +361,47 @@ test('the agent drafts phases through its tools', async ($, on) => {
   await $.tool.call({ tool: 'mcp__gmod__drop_phase', id: 'tags', reason: 'later' } as never)
   expect(seen.runs.find(r => r.args[0] === 'drop-phase')!.args).toEqual(['drop-phase', 'tags', '--reason', 'later'])
 })
+
+// ---- main moved under you ----
+
+const MOVED = JSON.parse(STATUS)
+MOVED.jobs[1].moved = { level: 'breaks', behind: 1, landed: ['rename-field'], touched: ['src/schema.mjs'], conflicts: [], failing: ['sum adds'] }
+MOVED.jobs[1].tests = 'green'
+MOVED.jobs[1].stalled = false
+const MOVED_STATUS = JSON.stringify(MOVED)
+
+test('the pane flags a job that breaks on today\'s main, and asks for a rebase', async ($, on) => {
+  await started($, on, () => ({ exitCode: 0, stdout: MOVED_STATUS }))
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: /^✗ breaks on main · agent-1$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /add-sum fails on today's main: rename-field changed src\/schema\.mjs \(agent-1\): rebase onto main/ })).toBeDefined()
+  // The test dot: green here, amber because it no longer holds on main.
+  const colors = (await ui.findAll({ type: 'Text', text: /^●$/ })).map(d => d.props?.color)
+  expect(colors).toContain('yellow')
+  await ui.unmount()
+})
+
+test('the agent hears it on its next step, from the folder it works in', async ($, on) => {
+  const seen = await started($, on, args =>
+    args[0] === 'notice' ? { exitCode: 0, stdout: 'gmod: rename-field landed on main and changed src/schema.mjs.' } : { exitCode: 0, stdout: args[0] === 'status' ? MOVED_STATUS : 'ok' },
+  )
+  const out = await $.tool.call({ tool: 'Write', file_path: '/repo-wt/src/b.mjs', content: 'x' })
+  expect(out.context?.at(-1)).toBe('gmod: rename-field landed on main and changed src/schema.mjs.')
+  expect(seen.runs.find(r => r.args[0] === 'notice')?.args[1]).toBe('/repo-wt/src/b.mjs')
+})
+
+test('nothing is asked while no job is affected', async ($, on) => {
+  const seen = await started($, on, () => ({ exitCode: 0, stdout: STATUS }))
+  await $.tool.call({ tool: 'Write', file_path: '/repo/src/b.mjs', content: 'x' })
+  expect(seen.runs.some(r => r.args[0] === 'notice')).toBe(false)
+})
+
+test('a governed session checks main in the background', async ($, on) => {
+  const every: number[] = []
+  on('clock.every', (_, e) => {
+    every.push((e as { ms: number }).ms)
+    return { value: { cancel: () => undefined } } as never
+  })
+  await started($, on, () => ({ exitCode: 0, stdout: STATUS }))
+  expect(every).toEqual([120_000])
+})
