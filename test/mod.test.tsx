@@ -443,3 +443,23 @@ test('an opened job shows the decisions that bind it', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /^⚖ ADR 0001 Sums never round {2}must: never round inside sum$/ })).toBeDefined()
   await ui.unmount()
 })
+
+// ---- gap 4: the journal ----
+
+test('the agent keeps a journal, and an opened job shows its last lines', async ($, on) => {
+  const J = JSON.parse(STATUS)
+  J.jobs[1].journal = [
+    { at: '2026-11-01T10:00:00Z', by: 'alice@x.io', text: 'plain + is enough' },
+    { at: '2026-11-01T10:05:00Z', by: 'check', text: 'red (sum adds)' },
+  ]
+  const seen = await started($, on, args => (args[0] === 'note' ? { exitCode: 0, stdout: 'noted in .gmod/journal/add-sum.md' } : { exitCode: 0, stdout: JSON.stringify(J) }))
+  const out = await $.tool.call({ tool: 'mcp__gmod__note', text: 'trying a plain +', dir: '/repo-wt' } as never)
+  expect(String(out.result)).toContain('noted')
+  const run = seen.runs.find(r => r.args[0] === 'note')!
+  expect([run.args[1], run.cwd]).toEqual(['trying a plain +', '/repo-wt'])
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'rowadd-sum' })
+  expect(await ui.find({ type: 'Text', text: /^✎ 10:00 alice: plain \+ is enough$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^✎ 10:05 red \(sum adds\)$/ })).toBeDefined()
+  await ui.unmount()
+})

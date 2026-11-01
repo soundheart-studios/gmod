@@ -14,6 +14,7 @@ const HELP = `gmod: planned work with proof, on plain git
   gmod release [job]              let a job go
   gmod check [job]                run the job's criteria; record red or green
   gmod gate-commit                may this worktree commit now?
+  gmod note <text> [--job <job>]  add to the job's journal (.gmod/journal/<job>.md)
   gmod guard-path <path> [--allow-plan]
                                   may this file be written now? (the repository it is in decides)
 
@@ -139,6 +140,10 @@ async function main() {
       const hint = r.result === 'red' ? 'recorded red: now make it pass' : r.sawRed ? 'recorded green after red: you may commit these files' : 'green, but no red was seen first: a commit will be refused';
       out(flags, r, `${r.job}: ${r.result}\n${lines.join('\n')}\n${hint}`);
       return r.result === 'green' ? 0 : 1;
+    }
+    case 'note': {
+      const r = core.note(root, args.join(' '), flags.job);
+      return out(flags, r, `noted in ${r.file}`);
     }
     case 'gate-commit': {
       const r = core.gateCommit(root);

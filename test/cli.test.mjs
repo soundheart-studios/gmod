@@ -679,3 +679,36 @@ test('ADRs: the agent edits ADR files only through drafts', () => {
     assert.match(gmod(w.alice, 'guard-path', 'docs/adr/0001-x.md').out, /decision records change only through a draft a person accepts/);
   } finally { w.done(); }
 });
+
+// ---- gap 4: a journal per job ----
+
+test('journal: notes and red/green land in .gmod/journal/<job>.md, without upsetting the commit gate', () => {
+  const w = world();
+  try {
+    gmod(w.alice, 'claim', 'add-sum');
+    assert.match(gmod(w.alice, 'note', 'plan: a plain + is enough; no rounding').out, /noted in \.gmod\/journal\/add-sum\.md/);
+    write(w.alice, { 'test/sum.test.mjs': TEST });
+    gmod(w.alice, 'check');
+    write(w.alice, { 'src/sum.mjs': CODE });
+    gmod(w.alice, 'check');
+    // A note after green doesn't invalidate it.
+    gmod(w.alice, 'note', 'done: one line');
+    assert.equal(gmod(w.alice, 'gate-commit').code, 0, gmod(w.alice, 'gate-commit').out);
+    const j = readFileSync(join(w.alice, '.gmod/journal/add-sum.md'), 'utf8');
+    assert.match(j, /^# add-sum: Add two numbers\n/);
+    assert.match(j, /\n- \S+ alice@x\.io: plan: a plain \+ is enough; no rounding\n/);
+    assert.match(j, /\n- \S+ check: red \(sum adds\)\n/);
+    assert.match(j, /\n- \S+ check: green\n/);
+    assert.match(j, /\n- \S+ alice@x\.io: done: one line\n$/);
+    assert.deepEqual(JSON.parse(gmod(w.alice, 'status', '--no-sync').out).jobs.find(x => x.id === 'add-sum').journal.at(-1).text, 'done: one line');
+
+    // It travels with the job; another job's journal doesn't.
+    sh(w.alice, 'git', ['add', '-A']);
+    sh(w.alice, 'git', ['commit', '-q', '-m', 'add-sum: sum adds']);
+    assert.match(gmod(w.alice, 'verify', '--base', 'origin/main').out, /✅ all 3 changed files are within the job/);
+    write(w.alice, { '.gmod/journal/add-mul.md': '# add-mul\n' });
+    sh(w.alice, 'git', ['add', '-A']);
+    sh(w.alice, 'git', ['commit', '-q', '--no-verify', '-m', 'add-sum: and a stray journal']);
+    assert.match(gmod(w.alice, 'verify', '--base', 'origin/main').out, /outside the job: \.gmod\/journal\/add-mul\.md/);
+  } finally { w.done(); }
+});

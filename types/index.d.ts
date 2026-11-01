@@ -19,6 +19,7 @@ export type GmodJob = {
   criteria: { text: string; pass: boolean | null }[]
   files: string[]
   adrs?: GmodAdr[]
+  journal?: { at: string; by: string; text: string }[]
 }
 export type GmodJobCard = { id: string; goal: string; phase: string | null; after: string[]; criteria: string[]; files: number; tests: number; paths: string[] }
 export type GmodPhaseCard = { id: string; title: string; outcome: string; after: string[] }

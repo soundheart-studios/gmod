@@ -18,7 +18,7 @@ const showAssumptions = atom({ plugin: 'gmod', key: 'showAssumptions' } as const
 const phaseOpen = atom({ plugin: 'gmod', key: 'phaseOpen' } as const, {})
 
 const ROUTINE = `This repository plans its work in .gmod/plan.json, and the gmod mod enforces it:
-- Take work with mcp__gmod__next and mcp__gmod__claim. Change only the claimed job's files; edits elsewhere are refused.
+- Take work with mcp__gmod__next and mcp__gmod__claim. Change only the claimed job's files; edits elsewhere are refused. Keep the job's journal with mcp__gmod__note: intent, decisions, dead ends.
 - Write or change the tests first, run mcp__gmod__check and see it fail (red). Then make it pass and run mcp__gmod__check again (green).
 - Commit only after green on exactly the files you commit, with the subject "<job>: …". The commit is refused otherwise.
 - Plan changes are drafted with mcp__gmod__propose_phase / propose_job, edit_job and drop_job (bigger plans group jobs into phases, each with an outcome, ordered after other phases), then described with mcp__gmod__describe_proposal (one plain sentence of why, and your assumptions); the person approves them in the gmod pane or with /gmod approve. Never write .gmod/plan.json yourself.
@@ -176,6 +176,7 @@ export const register: Register = on => {
     await $.tool.register({ name: 'propose_phase', description: 'Draft a phase, or replace one: a group of jobs with an outcome, ordered after other phases. Put jobs in it with their "phase" field. A plan with phases needs every job in one before the person can approve it.', inputSchema: { type: 'object', properties: { phase: PHASE }, required: ['phase'] }, isDeferred: false })
     await $.tool.register({ name: 'edit_phase', description: "Change a phase's title, outcome or after in the plan proposal.", inputSchema: { type: 'object', properties: { id: { type: 'string' }, changes: { type: 'object' } }, required: ['id', 'changes'] }, isDeferred: false })
     await $.tool.register({ name: 'drop_phase', description: 'Take an empty phase out of the plan proposal, saying why. Move or drop its jobs first.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, reason: { type: 'string' } }, required: ['id'] }, isDeferred: false })
+    await $.tool.register({ name: 'note', description: "Add a line to the claimed job's journal (.gmod/journal/<job>.md), which goes into its pull request for the reviewer: what you're about to try and why, a decision you made, a dead end and what you learned. Checks add red/green there by themselves.", inputSchema: { type: 'object', properties: { text: { type: 'string' }, ...DIR }, required: ['text'] }, isDeferred: false })
     await $.tool.register({ name: 'adr_propose', description: 'Draft an architecture decision record: a decision agents must follow from now on. Give it a short title, the scope (globs of the files it governs; empty for the whole repository), the context, the decision, and its rules, each {level: "must" | "should", text}. The person accepts it; then it binds every job whose files it covers, and CI holds pull requests to it.', inputSchema: { type: 'object', properties: { title: { type: 'string' }, scope: { type: 'array', items: { type: 'string' } }, context: { type: 'string' }, decision: { type: 'string' }, rules: { type: 'array', items: { type: 'object', properties: { level: { type: 'string', enum: ['must', 'should'] }, text: { type: 'string' } }, required: ['level', 'text'] } }, supersedes: { type: 'string', description: 'The id of an ADR this one replaces, e.g. 0003' } }, required: ['title', 'decision', 'rules'] }, isDeferred: false })
     await $.tool.register({ name: 'describe_proposal', description: 'Say what the plan proposal is for, in one short plain sentence (under 25 words) a non-engineer understands, and list the assumptions the person is really approving (choices you made that they might not have). Shown at the top of the proposal card.', inputSchema: { type: 'object', properties: { summary: { type: 'string' }, assumptions: { type: 'array', items: { type: 'string' } } } }, isDeferred: false })
     const s = await refresh($, true)
@@ -246,6 +247,11 @@ export const register: Register = on => {
   on('tool.call', { tool: 'mcp__gmod__drop_phase' }, async ($, e) => {
     const reason = arg(e, 'reason')
     const r = await gmod($, ['drop-phase', arg(e, 'id'), ...(reason ? ['--reason', reason] : [])])
+    await refresh($)
+    return r.exitCode === 0 ? { result: text(r) } : { deny: text(r) }
+  })
+  on('tool.call', { tool: 'mcp__gmod__note' }, async ($, e) => {
+    const r = await gmod($, ['note', arg(e, 'text')], arg(e, 'dir'))
     await refresh($)
     return r.exitCode === 0 ? { result: text(r) } : { deny: text(r) }
   })
@@ -668,6 +674,12 @@ export const register: Register = on => {
                 <Text key={`adr${a.id}`} color="cyan" wrap="wrap">
                   ⚖ ADR {a.id} {a.title}
                   <Text dimColor>{a.rules.some(r => r.level === 'must') ? `  must: ${a.rules.filter(r => r.level === 'must').map(r => r.text).join('; ')}` : ''}</Text>
+                </Text>
+              ))}
+              {(j.journal ?? []).slice(-3).map(n => (
+                <Text key={`j${n.at}`} dimColor wrap="wrap">
+                  ✎ {n.at.slice(11, 16)} {n.by === 'check' ? '' : `${n.by.split('@')[0]}: `}
+                  {n.text}
                 </Text>
               ))}
               {j.by && <Text dimColor>claimed by {j.by}</Text>}
