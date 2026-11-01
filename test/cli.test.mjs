@@ -523,3 +523,25 @@ test('moved under you: a hidden dependency (not its files, not a contract) still
     assert.match(gmod(w.bob, 'notice', w.bob).out, /rename-field landed on main and changed src\/schema\.mjs\. On today's main, "columns are the fields" fails/);
   } finally { w.done(); }
 });
+
+test('moved under you: names a job that joined the plan after this one started, skips plan files, ignores finished jobs', () => {
+  const w = sharedWorld();
+  try {
+    // A new job is planned and lands after bob's work began: bob's own copy
+    // of the plan doesn't know it.
+    const plan = structuredClone(SHARED);
+    plan.jobs.push({ id: 'retitle', goal: 'Retitle', files: ['src/schema.mjs'], tests: ['test/r.test.mjs'], done_when: [{ text: 'ok', check: 'ok' }] });
+    land(w, { '.gmod/plan.json': JSON.stringify(plan), 'src/schema.mjs': "export const FIELDS = ['name'];\n" }, 'retitle: title is now name');
+    const m = movedOf(w.bob, '--run');
+    assert.deepEqual([m.level, m.landed], ['breaks', ['retitle']]);
+    const told = gmod(w.bob, 'notice', w.bob).out;
+    assert.match(told, /^gmod: retitle landed on main and changed src\/schema\.mjs\. On today's main, "columns are the fields" fails for columns/);
+    assert.doesNotMatch(told, /\.gmod\/plan\.json/);
+
+    // alice's own job landed: her leftover claim isn't checked against main.
+    sh(w.alice, 'git', ['fetch', '-q', 'origin']);
+    gmod(w.alice, 'claim', 'rename-field', '--no-branch');
+    land(w, { 'src/shared.mjs': 'export const shared = 9;\n' }, 'rename-field: done');
+    assert.equal(JSON.parse(gmod(w.alice, 'moved', '--json').out).some(x => x.job === 'rename-field'), false);
+  } finally { w.done(); }
+});
