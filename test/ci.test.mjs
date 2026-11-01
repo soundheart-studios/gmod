@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -100,6 +100,14 @@ function fakeGitea(state) {
       if (req.url === '/api/v1/repos/acme/demo/actions/runners') return send(200, { runners: state.runners ?? [] });
       if (req.url === '/api/v1/user/actions/runners') return send(200, { runners: [] });
       if (req.url === '/api/v1/admin/actions/runners') return send(200, { runners: state.instanceRunners ?? [] });
+      if (req.url === '/api/v1/repos/acme/demo/pulls' && req.method === 'POST') {
+        const b = JSON.parse(body);
+        if ((state.pulls ??= []).some(p => p.head.ref === b.head)) return send(409, { message: 'pull request already exists for these targets' });
+        const pr = { number: state.pulls.length + 1, title: b.title, body: b.body, base: { ref: b.base }, head: { ref: b.head }, html_url: `http://gitea/acme/demo/pulls/${state.pulls.length + 1}` };
+        state.pulls.push(pr);
+        return send(201, pr);
+      }
+      if (req.url.startsWith('/api/v1/repos/acme/demo/pulls?')) return send(200, state.pulls ?? []);
       if (req.url === '/v1/models') return send(200, { data: [{ id: 'qwen' }] });
       send(404, {});
     });
@@ -159,12 +167,54 @@ test('gmod ci check: says what is in place and what is missing', async () => {
 
 // The fake server runs in this process, so the CLI must run alongside it.
 import { spawn } from 'node:child_process';
-function spawnSyncAsync(cwd, args) {
+function spawnSyncAsync(cwd, args, env = {}) {
   return new Promise(ok => {
-    const p = spawn('node', [GMOD, ...args], { cwd });
+    const p = spawn('node', [GMOD, ...args], { cwd, env: { ...process.env, ...env } });
     let out = '', err = '';
     p.stdout.on('data', d => (out += d));
     p.stderr.on('data', d => (err += d));
     p.on('close', code => ok({ code, out: out.trim(), err: err.trim() }));
   });
 }
+
+test('gmod pr: the token from ~/.config, the address from git config, titled by the job commit, once', async () => {
+  const api = await fakeGitea({});
+  const top = mkdtempSync(join(tmpdir(), 'gmod-pr-'));
+  try {
+    // origin is ssh, as on ai.local; a stand-in ssh runs git on a local bare repository.
+    const bare = join(top, 'acme', 'demo.git');
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
+    const ssh = join(top, 'ssh');
+    writeFileSync(ssh, `#!/bin/sh\nshift\nexec sh -c "$(echo "$*" | sed "s#'/acme/#'${top}/acme/#")"\n`, { mode: 0o755 });
+    const home = join(top, 'home');
+    mkdirSync(join(home, '.config', 'gmod'), { recursive: true });
+    writeFileSync(join(home, '.config', 'gmod', 'gitea-token'), 'tok-from-config\n');
+    const env = { HOME: home, GIT_CONFIG_NOSYSTEM: '1', GIT_SSH_COMMAND: ssh, GIT_SSH_VARIANT: 'simple', GITEA_TOKEN: '' };
+    const dir = repo('ssh://git@fakehost/acme/demo.git');
+    const g = (...a) => execFileSync('git', ['-C', dir, ...a], { env: { ...process.env, ...env }, encoding: 'utf8' });
+    g('config', 'user.email', 'a@x.io'); g('config', 'user.name', 'a');
+    g('config', '--global', 'gmod.fakehost.url', api.url);
+    mkdirSync(join(dir, '.gmod', 'journal'), { recursive: true });
+    writeFileSync(join(dir, '.gmod', 'plan.json'), JSON.stringify({ main: 'main', checks: { ok: 'true' }, jobs: [{ id: 'add-sum', goal: 'Add two numbers', files: ['src/**'], done_when: [{ text: 'adds', check: 'ok' }] }] }));
+    g('add', '-A'); g('commit', '-q', '-m', 'seed'); g('push', '-q', 'origin', 'HEAD:main'); g('fetch', '-q', 'origin');
+    g('checkout', '-q', '-b', 'gmod/add-sum');
+    writeFileSync(join(dir, '.gmod', 'journal', 'add-sum.md'), '# add-sum: Add two numbers\n\n- t alice: tried the obvious\n');
+    g('add', '-A'); g('commit', '-q', '-m', 'add-sum: sum adds');
+
+    let r = await spawnSyncAsync(dir, ['pr'], env);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /git push -u origin gmod\/add-sum/);
+
+    g('push', '-q', 'origin', 'gmod/add-sum');
+    r = await spawnSyncAsync(dir, ['pr', '--job', 'add-sum'], env);
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, /^opened: http:\/\/gitea\/acme\/demo\/pulls\/1\nadd-sum: sum adds$/);
+    const post = api.seen.find(x => x.method === 'POST');
+    assert.equal(post.auth, 'token tok-from-config');
+    assert.deepEqual([post.body.head, post.body.base, post.body.title], ['gmod/add-sum', 'main', 'add-sum: sum adds']);
+    assert.match(post.body.body, /\*\*add-sum\*\*: Add two numbers[\s\S]*### Journal[\s\S]*tried the obvious/);
+
+    r = await spawnSyncAsync(dir, ['pr'], env);
+    assert.match(r.out, /^already open: http:\/\/gitea\/acme\/demo\/pulls\/1/);
+  } finally { api.server.close(); rmSync(top, { recursive: true, force: true }); }
+});

@@ -56,6 +56,9 @@ const HELP = `gmod: planned work with proof, on plain git
                [--reviewer claude|local|none] [--review-url <url>] [--review-model <m>] [--blocking]
                [--owners @a,@b] [--url <gitea web address>] [--force]
                                   write the CI workflow (and CODEOWNERS) for this repository's forge
+  gmod pr [--job <id>] [--branch <b>] [--token-file <f>] [--url <u>]
+                                  open the job's pull request (its branch pushed first);
+                                  asked again, answers with the one already open
   gmod ci protect [--token-file <f>] [--url <u>] [--code-owners]
                                   require the gate and up-to-date branches on main; no direct pushes
   gmod ci guard-claims --repo-path <bare repo> [--admins a,b]
@@ -66,6 +69,8 @@ const HELP = `gmod: planned work with proof, on plain git
                                   is the workflow, protection, runner and reviewer in place?
   gmod status                     everything above, as JSON
 
+  Gitea: the token is --token-file, GITEA_TOKEN, or ~/.config/gmod/gitea-token; the web
+  address over ssh is --url, or once per host: git config --global gmod.<host>.url <url>
   --json prints JSON. Exit status 0 means yes / done, 1 means refused.`;
 
 function parse(argv) {
@@ -118,6 +123,13 @@ async function main() {
   }
   const root = core.repoRoot();
   if (cmd === 'ci') return runCi(root, args[0], flags);
+  if (cmd === 'pr') {
+    const plan = core.planFromDisk(root);
+    const id = flags.job ?? core.current(root)?.job;
+    const j = id && plan?.jobs.find(x => x.id === id);
+    const r = await ci.openPr(root, { url: flags.url, token: ci.giteaToken({ file: flags['token-file'] }), main: plan?.main ?? 'main', job: id, goal: j?.goal, brief: j?.brief, branch: flags.branch });
+    return out(flags, r, `${r.existed ? 'already open' : 'opened'}: ${r.url}\n${r.title}`);
+  }
   if (cmd === 'adr') return runAdr(root, args[0], args.slice(1), flags);
   switch (cmd) {
     case 'init': {
@@ -288,7 +300,7 @@ function runAdr(root, sub, rest, flags) {
 }
 
 async function runCi(root, sub, flags) {
-  const token = flags['token-file'] ? (await import('node:fs')).readFileSync(flags['token-file'], 'utf8').trim() : process.env.GITEA_TOKEN;
+  const token = ci.giteaToken({ file: flags['token-file'] });
   const main = flags.main ?? core.planFromDisk(root)?.main ?? 'main';
   if (sub === 'init') {
     const [repo, ref] = (flags['gmod-repo'] ?? '').split('@');
@@ -305,7 +317,7 @@ async function runCi(root, sub, flags) {
       main,
       force: !!flags.force,
     });
-    const next = r.forge.kind === 'github' ? 'commit it, then: gmod ci protect' : 'commit it, then: gmod ci protect --token-file <file>';
+    const next = 'commit it, then: gmod ci protect';
     return out(flags, r, `${r.files.map(f => `wrote ${f}`).join('\n')}\n${r.forge.kind} ${r.forge.owner}/${r.forge.repo}: ${next}`);
   }
   if (sub === 'protect') {

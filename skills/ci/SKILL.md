@@ -41,8 +41,8 @@ Commit what it wrote **before** protecting main: once protected, the workflow it
 
 ```sh
 node <gmod>/bin/gmod.mjs ci protect                       # GitHub: through gh
-node <gmod>/bin/gmod.mjs ci protect --token-file <file>    # Gitea: a token of a repository admin
-node <gmod>/bin/gmod.mjs ci check   --token-file <file>
+node <gmod>/bin/gmod.mjs ci protect    # Gitea: the person's token, from ~/.config/gmod/gitea-token
+node <gmod>/bin/gmod.mjs ci check      # over ssh, once per host: git config --global gmod.<host>.url http://host:port
 ```
 
 Never print a token or put one in a command line; read it from a file the person names.

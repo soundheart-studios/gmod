@@ -106,6 +106,31 @@ test('a commit needs red first, then green on exactly these files', () => {
   } finally { w.done(); }
 });
 
+test("a red from other checks doesn't count once the plan's checks change", () => {
+  const w = world();
+  try {
+    // The check is written wrong: it fails whatever the code does.
+    const broken = { ...PLAN, checks: { sum: 'node test/no-such-file.mjs' } };
+    write(w.alice, { '.gmod/plan.json': JSON.stringify(broken, null, 2) });
+    gmod(w.alice, 'claim', 'add-sum');
+    write(w.alice, { 'test/sum.test.mjs': TEST });
+    assert.equal(gmod(w.alice, 'check').code, 1, 'red, but only because the check cannot run');
+
+    // The check is fixed, the code written: green, yet that red proved nothing.
+    write(w.alice, { '.gmod/plan.json': JSON.stringify(PLAN, null, 2), 'src/sum.mjs': CODE });
+    assert.equal(gmod(w.alice, 'check').code, 0);
+    assert.match(gmod(w.alice, 'gate-commit').out, /checks changed since the failing run/);
+    assert.equal(JSON.parse(gmod(w.alice, 'status', '--json').out).sawRed, false);
+
+    // Seen failing under the real check, then passing: now it counts.
+    write(w.alice, { 'src/sum.mjs': 'export const sum = () => 0;\n' });
+    assert.equal(gmod(w.alice, 'check').code, 1);
+    write(w.alice, { 'src/sum.mjs': CODE });
+    assert.equal(gmod(w.alice, 'check').code, 0);
+    assert.equal(gmod(w.alice, 'gate-commit').code, 0);
+  } finally { w.done(); }
+});
+
 test('CI: verify passes real work and refuses the rest', () => {
   const w = world();
   try {
