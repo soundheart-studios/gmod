@@ -1,0 +1,81 @@
+# Copy to .github/workflows/gmod.yml. Then, in branch protection for main:
+#   - require pull requests, and "gmod / gate" (and "gmod / review" if you want it to block)
+#   - require review from code owners (CODEOWNERS: /.gmod/ @your-org/plan-owners)
+#   - require a merge queue, or "branches must be up to date"
+name: gmod
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+  push:
+    branches: [main]
+
+env:
+  GMOD: .gmod-tool/bin/gmod.mjs
+
+jobs:
+  gate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/checkout@v4
+        with: { repository: your-org/gmod, ref: v0.1.0, path: .gmod-tool }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: The deterministic gate
+        run: |
+          git fetch -q origin '+refs/gmod/claims/*:refs/gmod/claims/*'
+          node "$GMOD" verify --base "origin/$BASE" --head HEAD --branch "$BRANCH" --title "$TITLE" --report gate.md
+        env:
+          BASE: ${{ github.base_ref }}
+          BRANCH: ${{ github.head_ref }}
+          TITLE: ${{ github.event.pull_request.title }}
+      - if: always()
+        run: cat gate.md >> "$GITHUB_STEP_SUMMARY"
+
+  review:
+    needs: gate
+    # Pull requests from forks get no secrets: the review skips itself there.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions: { contents: read, pull-requests: write }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/checkout@v4
+        with: { repository: your-org/gmod, ref: v0.1.0, path: .gmod-tool }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci --prefix .gmod-tool --omit=dev || npm install --prefix .gmod-tool --omit=dev
+      - name: The AI review
+        run: node .gmod-tool/ci/review.mjs --base "origin/$BASE" --head HEAD --branch "$BRANCH" --title "$TITLE" --report review.md
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GMOD_REVIEW_OVERRIDE: ${{ contains(github.event.pull_request.labels.*.name, 'gmod-override') && '1' || '0' }}
+          BASE: ${{ github.base_ref }}
+          BRANCH: ${{ github.head_ref }}
+          TITLE: ${{ github.event.pull_request.title }}
+      - name: Post it on the pull request
+        if: always()
+        run: |
+          [ -s review.md ] || exit 0
+          gh pr comment "$PR" --body-file review.md --edit-last 2>/dev/null || gh pr comment "$PR" --body-file review.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+
+  sweep:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/checkout@v4
+        with: { repository: your-org/gmod, ref: v0.1.0, path: .gmod-tool }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Let go of claims on finished jobs
+        run: node "$GMOD" sweep

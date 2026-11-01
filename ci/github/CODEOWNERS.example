@@ -1,0 +1,3 @@
+# The plan's owners approve every plan change (with "require review from code owners").
+/.gmod/        @your-org/plan-owners
+/docs/adr/     @your-org/plan-owners
