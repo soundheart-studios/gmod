@@ -554,3 +554,25 @@ test('gap 3: when a job breaks, the notice says an outdated criterion is a plan 
     assert.match(gmod(w.bob, 'notice', w.bob).out, /If a criterion itself no longer fits what landed, don't bend the test: draft the change with mcp__gmod__edit_job and tell the person\./);
   } finally { w.done(); }
 });
+
+test('gap 2: CI refuses a job whose commits are not by whoever claimed it', () => {
+  const w = world();
+  try {
+    gmod(w.alice, 'claim', 'add-sum');
+    // bob does the work on alice's claim.
+    sh(w.bob, 'git', ['fetch', '-q', 'origin', '+refs/gmod/claims/*:refs/gmod/claims/*']);
+    sh(w.bob, 'git', ['switch', '-q', '-c', 'gmod/add-sum']);
+    write(w.bob, { 'src/sum.mjs': CODE, 'test/sum.test.mjs': TEST });
+    sh(w.bob, 'git', ['add', '-A']);
+    sh(w.bob, 'git', ['commit', '-q', '-m', 'add-sum: sum adds']);
+    const r = gmod(w.bob, 'verify', '--base', 'origin/main', '--branch', 'gmod/add-sum');
+    assert.equal(r.code, 1);
+    assert.match(r.out, /❌ claimed by alice@x\.io, but its commits are by bob@x\.io/);
+
+    // alice's own work on her claim passes that line.
+    write(w.alice, { 'src/sum.mjs': CODE, 'test/sum.test.mjs': TEST });
+    sh(w.alice, 'git', ['add', '-A']);
+    sh(w.alice, 'git', ['commit', '-q', '-m', 'add-sum: sum adds']);
+    assert.match(gmod(w.alice, 'verify', '--base', 'origin/main').out, /✅ claimed by alice@x\.io, who made its commits/);
+  } finally { w.done(); }
+});
