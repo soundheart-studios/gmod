@@ -505,3 +505,21 @@ test('moved under you: the board carries it for the pane', () => {
     assert.deepEqual([job.moved.level, job.moved.landed, job.moved.failing], ['breaks', ['rename-field'], ['columns are the fields']]);
   } finally { w.done(); }
 });
+
+test('moved under you: a hidden dependency (not its files, not a contract) still breaks it', () => {
+  const w = sharedWorld();
+  try {
+    // columns uses src/schema.mjs; here the plan doesn't declare it a contract.
+    const plan = structuredClone(SHARED);
+    delete plan.contracts;
+    land(w, { '.gmod/plan.json': JSON.stringify(plan) }, 'plan: drop the contract');
+    sh(w.bob, 'git', ['add', '-A']);
+    sh(w.bob, 'git', ['commit', '-q', '--no-verify', '-m', 'columns: wip']);
+    sh(w.bob, 'git', ['pull', '-q', '--rebase', 'origin', 'main']);
+    land(w, { 'src/schema.mjs': "export const FIELDS = ['name'];\n" }, 'rename-field: title is now name');
+    assert.equal(movedOf(w.bob).level, 'behind', 'without the checks, nothing points at it');
+    const m = movedOf(w.bob, '--run');
+    assert.deepEqual([m.level, m.touched, m.failing], ['breaks', [], ['columns are the fields']]);
+    assert.match(gmod(w.bob, 'notice', w.bob).out, /rename-field landed on main and changed src\/schema\.mjs\. On today's main, "columns are the fields" fails/);
+  } finally { w.done(); }
+});

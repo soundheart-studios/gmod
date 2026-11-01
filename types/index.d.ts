@@ -12,7 +12,7 @@ export type GmodJob = {
   waiting: string[]
   after: string[]
   phase: string | null
-  moved: { level: 'fresh' | 'behind' | 'touched' | 'conflicts' | 'breaks'; behind: number; landed: string[]; touched: string[]; conflicts: string[]; failing: string[] } | null
+  moved: { level: 'fresh' | 'behind' | 'touched' | 'conflicts' | 'breaks'; behind: number; landed: string[]; changed: string[]; touched: string[]; conflicts: string[]; failing: string[] } | null
   criteria: { text: string; pass: boolean | null }[]
   files: string[]
 }

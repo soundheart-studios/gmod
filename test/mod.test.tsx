@@ -365,7 +365,7 @@ test('the agent drafts phases through its tools', async ($, on) => {
 // ---- main moved under you ----
 
 const MOVED = JSON.parse(STATUS)
-MOVED.jobs[1].moved = { level: 'breaks', behind: 1, landed: ['rename-field'], touched: ['src/schema.mjs'], conflicts: [], failing: ['sum adds'] }
+MOVED.jobs[1].moved = { level: 'breaks', behind: 1, landed: ['rename-field'], changed: ['src/schema.mjs'], touched: ['src/schema.mjs'], conflicts: [], failing: ['sum adds'] }
 MOVED.jobs[1].tests = 'green'
 MOVED.jobs[1].stalled = false
 const MOVED_STATUS = JSON.stringify(MOVED)

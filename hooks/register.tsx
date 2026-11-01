@@ -713,7 +713,7 @@ export const register: Register = on => {
               <Text key={`moved${j.id}`} color="red" wrap="wrap">
                 ! {j.id}
                 {j.moved!.level === 'breaks'
-                  ? ` fails on today's main: ${j.moved!.landed.join(', ') || 'main'} changed ${j.moved!.touched.join(', ')}`
+                  ? ` fails on today's main: ${j.moved!.landed.join(', ') || 'main'} changed ${(j.moved!.touched.length ? j.moved!.touched : j.moved!.changed).slice(0, 3).join(', ')}`
                   : ` conflicts with main in ${j.moved!.conflicts.join(', ')}`}
                 {j.where && j.where !== 'here' ? ` (${j.where})` : ''}: rebase onto main
               </Text>
