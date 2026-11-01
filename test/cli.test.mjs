@@ -599,6 +599,26 @@ test('gap 2: CI refuses a job whose commits are not by whoever claimed it', () =
     sh(w.alice, 'git', ['add', '-A']);
     sh(w.alice, 'git', ['commit', '-q', '-m', 'add-sum: sum adds']);
     assert.match(gmod(w.alice, 'verify', '--base', 'origin/main').out, /✅ claimed by alice@x\.io, who made its commits/);
+
+    // The forge's "update branch" merges main in as someone else: main's work, not the job's.
+    write(w.seed, { 'README': 'moved on\n' });
+    sh(w.seed, 'git', ['commit', '-q', '-am', 'docs']);
+    sh(w.seed, 'git', ['push', '-q', 'origin', 'HEAD:main']);
+    sh(w.alice, 'git', ['fetch', '-q', 'origin']);
+    sh(w.alice, 'git', ['-c', 'user.email=forge@x.io', 'merge', '-q', '--no-edit', 'origin/main']);
+    assert.match(gmod(w.alice, 'verify', '--base', 'origin/main').out, /✅ claimed by alice@x\.io, who made its commits/);
+  } finally { w.done(); }
+});
+
+test('CI says why a criterion fails with the change', () => {
+  const w = world();
+  try {
+    gmod(w.alice, 'claim', 'add-sum');
+    write(w.alice, { 'src/sum.mjs': 'export const sum = (a, b) => a - b;\n', 'test/sum.test.mjs': TEST });
+    sh(w.alice, 'git', ['add', '-A']);
+    sh(w.alice, 'git', ['commit', '-q', '-m', 'add-sum: sum adds']);
+    const r = gmod(w.alice, 'verify', '--base', 'origin/main', '--branch', 'gmod/add-sum');
+    assert.match(r.out, /❌ the criteria pass with the change \(0\/1\)\n  - "sum adds" fails:\n\n    ```\n    sum\(2,3\) is -1\n    ```/);
   } finally { w.done(); }
 });
 
