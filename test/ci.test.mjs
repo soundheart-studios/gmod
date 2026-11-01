@@ -73,7 +73,9 @@ test('gmod ci init writes the workflow and CODEOWNERS, and never overwrites', ()
     const r = gmod(dir, ['ci', 'init', '--runs-on', 'ai-local', '--gmod-home', '/g', '--reviewer', 'local', '--review-url', 'http://127.0.0.1:8080/v1', '--owners', '@acme']);
     assert.equal(r.code, 0, r.err);
     assert.match(readFileSync(join(dir, '.gitea/workflows/gmod.yml'), 'utf8'), /runs-on: ai-local/);
-    assert.equal(readFileSync(join(dir, '.gitea/CODEOWNERS'), 'utf8'), '/.gmod/ @acme\n');
+    // The plan and the workflow both belong to the owners: a pull request
+    // runs its own copy of the workflow, so it could weaken its own gate.
+    assert.equal(readFileSync(join(dir, '.gitea/CODEOWNERS'), 'utf8'), '/.gmod/ @acme\n/.gitea/ @acme\n');
     assert.match(r.out, /wrote \.gitea\/workflows\/gmod\.yml/);
     const again = gmod(dir, ['ci', 'init', '--runs-on', 'ai-local', '--gmod-home', '/g']);
     assert.equal(again.code, 1);

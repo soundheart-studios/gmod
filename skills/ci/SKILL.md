@@ -61,5 +61,5 @@ Report what ran, how long it took, and anything that didn't.
 
 ## Afterwards
 
-- Changing the workflow later goes through a pull request like any other change. Plan a job that owns `.github/**` or `.gitea/**` for it.
-- For teams: a pull request runs its own copy of the workflow, so it could weaken the gate it's checked by. Put the workflow folder under CODEOWNERS and require their review.
+- Changing the workflow later is a pull request with only CI files in it (workflows, CODEOWNERS); the gate passes it as a CI change and leaves the review to the owners. Mixed with code, it's refused.
+- For teams: a pull request runs its own copy of the workflow, so it could weaken the gate it's checked by. `--owners` puts the workflow folder under CODEOWNERS too; `gmod ci protect --code-owners` makes their review required.

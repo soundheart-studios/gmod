@@ -576,3 +576,20 @@ test('gap 2: CI refuses a job whose commits are not by whoever claimed it', () =
     assert.match(gmod(w.alice, 'verify', '--base', 'origin/main').out, /✅ claimed by alice@x\.io, who made its commits/);
   } finally { w.done(); }
 });
+
+test('gap 6: a CI change travels alone, for the owners to review', () => {
+  const w = world();
+  try {
+    write(w.alice, { '.gitea/workflows/gmod.yml': 'name: gmod\n', '.gitea/CODEOWNERS': '/.gmod/ @alice\n' });
+    sh(w.alice, 'git', ['add', '-A']);
+    sh(w.alice, 'git', ['commit', '-q', '-m', 'ci: the gate']);
+    const ok = gmod(w.alice, 'verify', '--base', 'origin/main');
+    assert.equal(ok.code, 0, ok.out);
+    assert.match(ok.out, /✅ a CI change on its own/);
+    assert.match(ok.out, /the repository's owners review CI changes \(CODEOWNERS\)/);
+
+    write(w.alice, { 'src/sum.mjs': CODE });
+    sh(w.alice, 'git', ['commit', '-q', '-am', 'ci: and some code']);
+    assert.match(gmod(w.alice, 'verify', '--base', 'origin/main').out, /❌ a CI change carries only CI files; also changed: src\/sum\.mjs/);
+  } finally { w.done(); }
+});
