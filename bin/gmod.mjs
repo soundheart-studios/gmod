@@ -4,6 +4,9 @@
 import * as core from '../lib/core.mjs';
 import * as ci from '../lib/ci.mjs';
 import * as adr from '../lib/adr.mjs';
+import * as rcv from '../lib/receive.mjs';
+import { readFileSync as readSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const HELP = `gmod: planned work with proof, on plain git
 
@@ -55,6 +58,10 @@ const HELP = `gmod: planned work with proof, on plain git
                                   write the CI workflow (and CODEOWNERS) for this repository's forge
   gmod ci protect [--token-file <f>] [--url <u>] [--code-owners]
                                   require the gate and up-to-date branches on main; no direct pushes
+  gmod ci guard-claims --repo-path <bare repo> [--admins a,b]
+                                  on the forge's machine: refuse moving claims, and letting go of
+                                  someone else's (Gitea's pre-receive.d)
+  gmod receive                    the hook itself: reads pushed refs on stdin
   gmod ci check [--token-file <f>] [--url <u>]
                                   is the workflow, protection, runner and reviewer in place?
   gmod status                     everything above, as JSON
@@ -88,6 +95,17 @@ function out(flags, value, text) {
 async function main() {
   const { cmd, args, flags } = parse(process.argv.slice(2));
   if (!cmd || cmd === 'help' || flags.help) return void console.log(HELP);
+  // Server side: neither needs a work tree.
+  if (cmd === 'receive') {
+    const r = rcv.receive(readSync(0, 'utf8'));
+    for (const why of r.refused) console.error(`gmod: ${why}`);
+    return r.ok ? 0 : 1;
+  }
+  if (cmd === 'ci' && args[0] === 'guard-claims') {
+    if (!flags['repo-path']) throw new core.GmodError('gmod ci guard-claims --repo-path <bare repository> [--admins a,b]');
+    const r = rcv.guardClaims({ repoPath: flags['repo-path'], admins: (flags.admins ?? '').split(',').map(x => x.trim()).filter(Boolean), gmod: flags.gmod ?? fileURLToPath(import.meta.url) });
+    return out(flags, r, `guarding claims in ${r.repo}${r.admins.length ? ` (admins: ${r.admins.join(', ')})` : ''}`);
+  }
   if (cmd === 'notice') {
     process.stdout.write(core.notice(args[0] ?? '.'));
     return 0;
