@@ -545,3 +545,12 @@ test('moved under you: names a job that joined the plan after this one started, 
     assert.equal(JSON.parse(gmod(w.alice, 'moved', '--json').out).some(x => x.job === 'rename-field'), false);
   } finally { w.done(); }
 });
+
+test('gap 3: when a job breaks, the notice says an outdated criterion is a plan change, not a test to bend', () => {
+  const w = sharedWorld();
+  try {
+    land(w, { 'src/schema.mjs': "export const FIELDS = ['name'];\n" }, 'rename-field: title is now name');
+    movedOf(w.bob, '--run');
+    assert.match(gmod(w.bob, 'notice', w.bob).out, /If a criterion itself no longer fits what landed, don't bend the test: draft the change with mcp__gmod__edit_job and tell the person\./);
+  } finally { w.done(); }
+});
