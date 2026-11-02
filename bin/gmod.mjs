@@ -377,7 +377,7 @@ async function runCi(root, sub, flags) {
   }
   if (sub === 'forge-token') {
     const r = await ci.ciForgeToken(root, { url: flags.url, token });
-    return out(flags, r, `GMOD_FORGE_TOKEN set on ${r.forge.owner}/${r.forge.repo}: the gate reads main's protection with it, and job branches CI brings up to date are checked again`);
+    return out(flags, r, `GMOD_FORGE_TOKEN set on ${r.forge.owner}/${r.forge.repo}: the gate reads main's protection with it, and job branches CI brings up to date are checked again${r.updated.length ? `\nbrought up to date, checked again: ${r.updated.map(n => `#${n}`).join(', ')}` : ''}`);
   }
   throw new core.GmodError('gmod ci init | protect | check | forge-token');
 }
