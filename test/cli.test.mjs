@@ -157,6 +157,21 @@ test('gmod commit finishes a job: only after red then green, pushed, as "<job>: 
   } finally { w.done(); }
 });
 
+test('a CI change needs no job: edited and committed on its own, nothing else with it', () => {
+  const w = world();
+  try {
+    assert.equal(gmod(w.alice, 'guard-path', '.gitea/workflows/gmod.yml').code, 0);
+    assert.equal(gmod(w.alice, 'guard-path', '.gmod/protect.json').code, 0);
+    assert.match(gmod(w.alice, 'guard-path', 'src/sum.mjs').out, /claim a job/);
+    write(w.alice, { '.gitea/workflows/gmod.yml': 'name: gmod\n', '.gmod/protect.json': '{"require":["gate","review"]}' });
+    sh(w.alice, 'git', ['add', '-A']);
+    assert.equal(gmod(w.alice, 'gate-commit').code, 0);
+    write(w.alice, { 'src/sum.mjs': CODE });
+    sh(w.alice, 'git', ['add', '-A']);
+    assert.match(gmod(w.alice, 'gate-commit').out, /claim a job first/);
+  } finally { w.done(); }
+});
+
 test('CI: verify passes real work and refuses the rest', () => {
   const w = world();
   try {
