@@ -11,7 +11,7 @@
 //    it would really land on, and auto-merge lands it once they pass.
 //
 // From the CI environment: GITHUB_SERVER_URL (or GITEA_URL), GITHUB_REPOSITORY,
-// GMOD_TOKEN, GMOD_SHA (the commit that landed), and GMOD_UPDATE_TOKEN: the
+// GMOD_TOKEN, GMOD_SHA (the commit that landed), and GMOD_FORGE_TOKEN: the
 // forge starts no checks for what CI's own token pushes, so the update is
 // made with a person's token when the repository keeps one. Gitea only.
 import * as core from '../lib/core.mjs';
@@ -30,7 +30,7 @@ if (process.env.GITHUB_API_URL?.includes('api.github.com')) {
 }
 const api = `${server}/api/v1/repos/${repo}`;
 const headers = { authorization: `token ${token}`, 'content-type': 'application/json', accept: 'application/json' };
-const updater = process.env.GMOD_UPDATE_TOKEN || '';
+const updater = process.env.GMOD_FORGE_TOKEN || '';
 async function call(method, path, body, as = token) {
   const res = await fetch(`${api}${path}`, { method, headers: { ...headers, authorization: `token ${as}` }, body: body ? JSON.stringify(body) : undefined });
   const text = await res.text();
@@ -94,6 +94,6 @@ for (const pr of open.ok ? open.json ?? [] : []) {
   const behind = !core.git(['merge-base', '--is-ancestor', sha, pr.head.sha], { cwd: root, allow: true }).ok;
   if (!behind) continue;
   const r = await call('POST', `/pulls/${pr.number}/update?style=merge`, null, updater || token);
-  console.log(r.ok ? `after-merge: #${pr.number} (${ref}) takes ${main} in${updater ? '' : " (with CI's own token: its checks won't start again until it gets a new commit; set the GMOD_UPDATE_TOKEN secret)"}` : `after-merge: #${pr.number} (${ref}) couldn't take ${main} in (${r.status}): ${JSON.stringify(r.json)}`);
+  console.log(r.ok ? `after-merge: #${pr.number} (${ref}) takes ${main} in${updater ? '' : " (with CI's own token: its checks won't start again until it gets a new commit; set the GMOD_FORGE_TOKEN secret)"}` : `after-merge: #${pr.number} (${ref}) couldn't take ${main} in (${r.status}): ${JSON.stringify(r.json)}`);
 }
 process.exit(failed ? 1 : 0);

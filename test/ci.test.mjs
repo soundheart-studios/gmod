@@ -245,8 +245,9 @@ test('the workflow compares against the pull request base, and checks what lande
   const y = workflow({ forge: 'gitea', runsOn: 'ai-local', gmod: { path: '/g' }, reviewer: { kind: 'local', url: 'http://m/v1' }, blocking: true });
   assert.match(y, /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
   assert.match(y, /verify --base "\$\{BASE_SHA:-origin\/\$BASE\}"/);
+  assert.match(y, /BASE_SHA: .*\n {10}GMOD_TOKEN: \$\{\{ secrets\.GMOD_FORGE_TOKEN \}\}\n {6}- name: Post it/);
   assert.match(y, /review\.mjs" --base "\$\{BASE_SHA:-origin\/\$BASE\}"/);
-  assert.match(y, /ci\/after-merge\.mjs"\n {8}env:\n {10}GMOD_TOKEN: \$\{\{ github\.token \}\}\n {10}GMOD_UPDATE_TOKEN: \$\{\{ secrets\.GMOD_UPDATE_TOKEN \}\}\n {10}GMOD_SHA: \$\{\{ github\.sha \}\}/);
+  assert.match(y, /ci\/after-merge\.mjs"\n {8}env:\n {10}GMOD_TOKEN: \$\{\{ github\.token \}\}\n {10}GMOD_FORGE_TOKEN: \$\{\{ secrets\.GMOD_FORGE_TOKEN \}\}\n {10}GMOD_SHA: \$\{\{ github\.sha \}\}/);
   assert.doesNotMatch(y, /GMOD_REVIEW_MODE/);
 });
 
