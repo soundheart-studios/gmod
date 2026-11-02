@@ -132,7 +132,7 @@ test('gmod ci protect: on Gitea, require the gate and up-to-date branches, no di
     assert.equal(post.auth, 'token secret-token');
     assert.deepEqual(
       [post.body.rule_name, post.body.enable_push, post.body.enable_status_check, post.body.status_check_contexts, post.body.block_on_outdated_branch],
-      ['main', false, true, ['gmod / gate*'], true],
+      ['main', false, true, ['gmod / gate (pull_request)'], true],
     );
     // Run again: the rule is updated in place, not duplicated.
     await spawnSyncAsync(dir, ['ci', 'protect', '--token-file', join(dir, 'tok')]);
@@ -142,7 +142,7 @@ test('gmod ci protect: on Gitea, require the gate and up-to-date branches, no di
 });
 
 test('gmod ci check: says what is in place and what is missing', async () => {
-  const state = { rule: { rule_name: 'main', enable_status_check: true, status_check_contexts: ['gmod / gate*'], block_on_outdated_branch: true, enable_push: false } };
+  const state = { rule: { rule_name: 'main', enable_status_check: true, status_check_contexts: ['gmod / gate (pull_request)'], block_on_outdated_branch: true, enable_push: false } };
   const api = await fakeGitea(state);
   const dir = repo(`${api.url}/acme/demo.git`);
   try {
@@ -252,15 +252,19 @@ test('the workflow compares against the pull request base, and checks what lande
 });
 
 test("main's live protection is held to .gmod/protect.json", async () => {
-  const state = { rule: { enable_status_check: true, status_check_contexts: ['gmod / gate*'], block_on_outdated_branch: true, enable_push: false } };
+  const state = { rule: { enable_status_check: true, status_check_contexts: ['gmod / gate (pull_request)'], block_on_outdated_branch: true, enable_push: false } };
   const api = await fakeGitea(state);
   const dir = repo(`${api.url}/acme/demo.git`);
   try {
     const spec = { require: ['gate', 'review'], up_to_date: true };
     let f = await protectionMatches(dir, { spec, token: 't' });
     assert.equal(f.ok, false);
-    assert.match(f.msg, /weaker than \.gmod\/protect\.json: the review isn't required/);
+    assert.match(f.msg, /weaker than \.gmod\/protect\.json: the review isn't required by its exact name/);
+    // A pattern matches the skipped "(push)" statuses too: weaker, not equal.
     state.rule.status_check_contexts.push('gmod / review*');
+    f = await protectionMatches(dir, { spec, token: 't' });
+    assert.match(f.msg, /gmod \/ review\* is a pattern a skipped status satisfies/);
+    state.rule.status_check_contexts = ['gmod / gate (pull_request)', 'gmod / review (pull_request)'];
     f = await protectionMatches(dir, { spec, token: 't' });
     assert.equal(f.ok, true, f.msg);
     state.rule.enable_push = true;
