@@ -134,10 +134,19 @@ test('gmod ci protect: on Gitea, require the gate and up-to-date branches, no di
       [post.body.rule_name, post.body.enable_push, post.body.enable_status_check, post.body.status_check_contexts, post.body.block_on_outdated_branch],
       ['main', false, true, ['gmod / gate (pull_request)'], true],
     );
+    // What main declares is what's applied, without the flag.
+    execFileSync('git', ['-C', dir, 'config', 'user.email', 'a@x.io']);
+    execFileSync('git', ['-C', dir, 'config', 'user.name', 'a']);
+    execFileSync('git', ['-C', dir, 'commit', '-q', '--allow-empty', '-m', 'seed']);
+    execFileSync('mkdir', ['-p', join(dir, '.gmod')]);
+    writeFileSync(join(dir, '.gmod', 'protect.json'), JSON.stringify({ require: ['gate', 'review'] }));
+    await spawnSyncAsync(dir, ['ci', 'protect', '--token-file', join(dir, 'tok')]);
+    assert.deepEqual(api.seen.at(-1).body.status_check_contexts, ['gmod / gate (pull_request)', 'gmod / review (pull_request)']);
+    rmSync(join(dir, '.gmod'), { recursive: true });
     // Run again: the rule is updated in place, not duplicated.
     await spawnSyncAsync(dir, ['ci', 'protect', '--token-file', join(dir, 'tok')]);
     assert.equal(api.seen.filter(s => s.method === 'POST').length, 1);
-    assert.equal(api.seen.filter(s => s.method === 'PATCH').length, 1);
+    assert.equal(api.seen.filter(s => s.method === 'PATCH').length, 2);
   } finally { api.server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
