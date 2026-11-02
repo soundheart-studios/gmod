@@ -73,6 +73,9 @@ const HELP = `gmod: planned work with proof, on plain git
                                   on the forge's machine: refuse moving claims, and letting go of
                                   someone else's (Gitea's pre-receive.d)
   gmod receive                    the hook itself: reads pushed refs on stdin
+  gmod ci update-token [--token-file <f>] [--url <u>]
+                                  keep your token as the repository's GMOD_UPDATE_TOKEN secret, so
+                                  job branches CI brings up to date after a merge are checked again
   gmod ci check [--token-file <f>] [--url <u>]
                                   is the workflow, protection, runner and reviewer in place?
   gmod status                     everything above, as JSON
@@ -369,7 +372,11 @@ async function runCi(root, sub, flags) {
     out(flags, r, r.findings.map(f => `${f.ok ? '✅' : '❌'} ${f.msg}`).join('\n'));
     return r.ok ? 0 : 1;
   }
-  throw new core.GmodError('gmod ci init | protect | check');
+  if (sub === 'update-token') {
+    const r = await ci.ciUpdateToken(root, { url: flags.url, token });
+    return out(flags, r, `GMOD_UPDATE_TOKEN set on ${r.forge.owner}/${r.forge.repo}: job branches CI brings up to date are checked again`);
+  }
+  throw new core.GmodError('gmod ci init | protect | check | update-token');
 }
 
 try {

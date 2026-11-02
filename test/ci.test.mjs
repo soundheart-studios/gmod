@@ -246,7 +246,7 @@ test('the workflow compares against the pull request base, and checks what lande
   assert.match(y, /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
   assert.match(y, /verify --base "\$\{BASE_SHA:-origin\/\$BASE\}"/);
   assert.match(y, /review\.mjs" --base "\$\{BASE_SHA:-origin\/\$BASE\}"/);
-  assert.match(y, /ci\/after-merge\.mjs"\n {8}env:\n {10}GMOD_TOKEN: \$\{\{ github\.token \}\}\n {10}GMOD_SHA: \$\{\{ github\.sha \}\}/);
+  assert.match(y, /ci\/after-merge\.mjs"\n {8}env:\n {10}GMOD_TOKEN: \$\{\{ github\.token \}\}\n {10}GMOD_UPDATE_TOKEN: \$\{\{ secrets\.GMOD_UPDATE_TOKEN \}\}\n {10}GMOD_SHA: \$\{\{ github\.sha \}\}/);
   assert.doesNotMatch(y, /GMOD_REVIEW_MODE/);
 });
 

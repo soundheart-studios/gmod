@@ -207,7 +207,7 @@ test('CI: a plan change travels alone', () => {
     sh(w.alice, 'git', ['commit', '-q', '-am', 'plan docs']);
     const ok = gmod(w.alice, 'verify', '--base', 'origin/main');
     assert.equal(ok.code, 0, ok.out);
-    assert.match(ok.out, /owners approve/);
+    assert.match(ok.out, /the review checks it weakens nothing/);
     write(w.alice, { 'src/sum.mjs': CODE });
     sh(w.alice, 'git', ['commit', '-q', '-am', 'and some code']);
     assert.match(gmod(w.alice, 'verify', '--base', 'origin/main').out, /only the plan.*src\/sum\.mjs/);
@@ -672,7 +672,7 @@ test('gap 6: a CI change travels alone, for the owners to review', () => {
     const ok = gmod(w.alice, 'verify', '--base', 'origin/main');
     assert.equal(ok.code, 0, ok.out);
     assert.match(ok.out, /✅ a CI change on its own/);
-    assert.match(ok.out, /the repository's owners review CI changes \(CODEOWNERS\)/);
+    assert.match(ok.out, /the review checks it weakens nothing that is checked/);
 
     write(w.alice, { 'src/sum.mjs': CODE });
     sh(w.alice, 'git', ['commit', '-q', '-am', 'ci: and some code']);
