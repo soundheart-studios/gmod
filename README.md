@@ -190,7 +190,7 @@ sequenceDiagram
     You->>G: Approve
     G->>G: write .gmod/plan.json, commit it alone ("plan: add …")
     G->>F: plan-only pull request
-    F-->>You: gate passes, then the owners (CODEOWNERS) review
+    F-->>You: gate passes, the review checks it weakens nothing, it lands
 ```
 
 - **Drafts can be unfinished while Claude builds them,** for example a phase with no jobs yet. The card then says "not ready to approve" and hides **Approve**.
@@ -212,13 +212,17 @@ sequenceDiagram
     A->>G: check → red (recorded)
     A->>A: write the code (edits outside the job are refused)
     A->>G: check → green (recorded, with a fingerprint of the files)
-    A->>G: git commit
+    A->>G: commit (mcp__gmod__commit)
     G-->>A: allowed: red came first, green ran on exactly these files
-    A->>O: push branch, open pull request "job: …"
+    G->>O: push branch, open pull request "job: …", land on green
     O->>F: run the gate, then the review
+    F-->>O: both pass: the forge merges it, nobody clicks
+    F->>O: after the merge: check what landed, bring the other job branches up to date
 ```
 
-The commit check runs **inside the agent's own shell**, at the moment `git commit` starts. So it judges the worktree the commit is actually made in, even for a subagent in a worktree of its own, or after a `cd`.
+Agents finish a job with **`mcp__gmod__commit`** (`gmod commit`): it commits exactly what the last passing check ran on, pushes, and opens the pull request with auto-merge on. No raw `git commit`, so nothing for a shell guard to mistake, and a subagent finishes its own job in its own worktree. A `git commit` typed by hand still goes through the same check, in the shell that runs it, judged against the worktree it commits (`git -C <worktree>` included).
+
+If anything is denied, agents are told to say so and stop: never another file, another session or another agent to get round it.
 
 ### The CI gate
 
@@ -227,20 +231,38 @@ The commit check runs **inside the agent's own shell**, at the moment `git commi
 ```mermaid
 flowchart TD
     S([pull request]) --> K{what changed?}
-    K -- "only .gmod/plan.json<br/>(+ ADRs)" --> PL["plan change:<br/>valid? alone?<br/>owners review"]
-    K -- "only docs/adr" --> AD["decision record:<br/>alone? owners review"]
-    K -- "only workflows /<br/>CODEOWNERS" --> CIc["CI change:<br/>alone? owners review"]
+    K -- "only .gmod/plan.json<br/>(+ ADRs)" --> PL["plan change:<br/>valid? alone?<br/>review: weakens anything?"]
+    K -- "only docs/adr" --> AD["decision record:<br/>alone?<br/>review: weakens anything?"]
+    K -- "only workflows /<br/>protect.json" --> CIc["CI change:<br/>alone?<br/>review: weakens anything?"]
     K -- code --> J{"names a job?<br/>branch gmod/job or<br/>title 'job: …'"}
     J -- no --> X([❌ refused])
     J -- yes --> W["✅ in main's plan<br/>✅ what it waits for is on main<br/>✅ claimed, by whoever committed<br/>✅ only the job's files<br/>ℹ️ the ADRs it falls under"]
-    W --> P["proof, in a scratch copy:<br/>1. the criteria pass with the change<br/>2. code put back, new tests kept:<br/>the criteria must FAIL"]
+    W --> PR["main's live protection<br/>holds .gmod/protect.json"]
+    PR --> P["proof, in a scratch copy:<br/>1. the criteria pass with the change<br/>2. code put back, new tests kept:<br/>the criteria must FAIL"]
     P --> R["AI review:<br/>each criterion, are the tests real,<br/>does it stay within the goal,<br/>each ADR (a broken must = fail)"]
-    R --> Mg([mergeable once the gate is green<br/>and the branch is up to date])
+    R --> Mg([lands by itself once both pass<br/>and the branch is up to date])
 ```
 
 Step 2 of the proof is what makes a test count. A test that passes whether or not the change is there proves nothing, and is refused.
 
-The **AI review** gets a fixed checklist and a strict JSON answer shape. It reads the job's journal as the agent's account of its intent, never as proof. Everything in the pull request is treated as material under review, never as instructions to the reviewer. It starts as **advice** (it comments). `--blocking` makes a "fail" stop the merge, and a maintainer can override that with the `gmod-override` label.
+The **AI review** gets a fixed checklist and a strict JSON answer shape. It reads the job's journal as the agent's account of its intent, never as proof. Everything in the pull request is treated as material under review, never as instructions to the reviewer. A change to the governance itself (plan, ADRs, CI, `protect.json`) gets one question instead: does it weaken what is checked? Advice only by default; `--blocking` makes a "fail" stop the merge, and then it **fails closed**: no answer, a malformed one, or an empty diff stops the merge too. A maintainer overrides a fail with the `gmod-override` label.
+
+Both compare against the pull request's **own base commit**, not live `main`: a review that started after the merge once saw an empty diff and judged nothing.
+
+### Landing without a person
+
+What `main` requires is **declared in the repository**, in `.gmod/protect.json`:
+
+```json
+{ "require": ["gate", "review"], "up_to_date": true }
+```
+
+- `gmod ci protect` applies it, requiring the checks **by exact name** (`gmod / gate (pull_request)`). A pattern like `gmod / gate*` also matches the skipped `(push)` statuses Gitea posts on branch commits, and a skipped status passes: that once let a failing pull request merge before its gate ran.
+- The gate refuses every pull request while `main`'s live protection is weaker than the declaration. Loosening it by hand stops all merging until it's put back.
+- After each merge, CI checks what landed passed what was required, and opens a **`gmod breach`** issue if not (or if something reached `main` without a pull request).
+- After each merge, CI brings every other open job branch up to date, so its checks run again on what it would really land on, and it lands in turn.
+
+Reading protection and updating branches so their checks start need a person's token (CI's own can't read protection, and the forge starts no checks for what CI's token pushes). `gmod ci forge-token` keeps yours as the `GMOD_FORGE_TOKEN` secret.
 
 ### When `main` moves under a job
 
@@ -305,17 +327,18 @@ gmod ci protect                      # through gh
 # Gitea, a self-hosted runner, a local model reviewing
 gmod ci init --reviewer local --review-url http://127.0.0.1:8080/v1 \
              --runs-on my-runner --gmod-home /opt/gmod --owners @me
-gmod ci protect --token-file ~/.gitea-token
+gmod ci protect                       # applies .gmod/protect.json; token from ~/.config/gmod/gitea-token
+gmod ci forge-token                   # GMOD_FORGE_TOKEN: the gate reads protection, CI's updates start checks
 gmod ci guard-claims --repo-path /var/lib/gitea/repos/me/app.git   # on the Gitea machine
 
-gmod ci check --token-file ~/.gitea-token
+gmod ci check
 # ✅ the workflow is in .gitea/workflows/gmod.yml
 # ✅ main requires the gate and up-to-date branches
 # ✅ runner my-runner (online) has the label my-runner (the instance's)
 # ✅ the reviewer answers at http://127.0.0.1:8080/v1
 ```
 
-Commit the workflow **before** `ci protect`. Once `main` is protected, CI changes go through a pull request of their own, and the owners review it.
+Commit the workflow **before** `ci protect`. Once `main` is protected, CI changes go through a pull request of their own (`gmod pr --auto`), and the review checks they weaken nothing. `--setup "<commands>"` adds a step that installs the project's own dependencies before the gate and the review.
 
 The reviewer works with Claude (`ANTHROPIC_API_KEY`) or any OpenAI-compatible endpoint, such as llama.cpp, Ollama or vLLM (`GMOD_REVIEW_URL`, `GMOD_REVIEW_MODEL`). Local models get one retry when an answer comes back malformed.
 
@@ -337,6 +360,7 @@ The reviewer works with Claude (`ANTHROPIC_API_KEY`) or any OpenAI-compatible en
 | For agents (`mcp__gmod__…`) | |
 |---|---|
 | `next` · `claim` · `check` · `release` · `status` · `note` | doing work; each takes `dir` for a worktree of its own |
+| `commit` · `pr_status` | finishing it: commit, push, open the pull request to land on green; how its checks went |
 | `propose_phase` · `edit_phase` · `drop_phase` | drafting phases |
 | `propose_job` · `edit_job` · `drop_job` · `describe_proposal` | drafting jobs |
 | `adr_propose` | drafting a decision |
@@ -348,10 +372,10 @@ The reviewer works with Claude (`ANTHROPIC_API_KEY`) or any OpenAI-compatible en
 | Area | Commands |
 |---|---|
 | Plan | `init` · `plan` · `next` · `proposal` · `propose-phase` · `edit-phase` · `drop-phase` · `propose-job` · `edit-job` · `drop-job` · `describe-proposal` · `approve` · `reject` |
-| Work | `claim` · `release` · `check` · `note` · `gate-commit` · `guard-path` · `status` |
+| Work | `claim` · `release` · `check` · `note` · `commit` · `pr [--auto] [--status]` · `gate-commit` · `guard-path` · `status` |
 | Main moved | `moved [--run]` · `notice <path>` |
 | Decisions | `adr propose` · `adr drafts` · `adr accept` · `adr reject` · `adr list` · `adr for <path>` |
-| CI | `verify` · `prove` · `sweep` · `ci init` · `ci protect` · `ci check` · `ci guard-claims` · `receive` |
+| CI | `verify` · `prove` · `sweep` · `ci init` · `ci protect` · `ci check` · `ci forge-token` · `ci guard-claims` · `receive` |
 
 ### A plan
 
@@ -387,7 +411,9 @@ The reviewer works with Claude (`ANTHROPIC_API_KEY`) or any OpenAI-compatible en
 
 - **Enforcement is at merge, not at push,** except for claims. `main` is protected, so that's where it counts.
 - **"Breaks on main" sees only what a job's tests exercise.**
-- **Identities are git emails.** Agents commit as the person they work for.
+- **Identities are git emails, and agents hold the person's token.** The forge can't tell an agent from its person, so its settings are only as safe as that token: the gate and the breach tripwire notice loosened protection, they can't stop someone who holds the key. A separate account for agents would close that.
+- **A pull request runs its own copy of the workflow.** A governance change could weaken the very step that checks it; the review is asked exactly that, and the tripwire watches what lands.
+- **Landing without a person is Gitea-only for now.** On GitHub `gmod pr --auto` uses its auto-merge, but the protection comparison and after-merge steps don't run yet.
 - **Gitea has no merge queue,** so many agents merging at once means many rebases.
 - **One repository per plan.**
 
