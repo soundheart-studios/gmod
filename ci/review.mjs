@@ -25,6 +25,12 @@ const ADVICE_ONLY = process.env.GMOD_REVIEW_MODE === 'comment';
 const EFFORT = process.env.GMOD_REVIEW_EFFORT || 'medium';
 const DIFF_LIMIT = 600_000;
 const ADR_LIMIT = 200_000;
+// Data (recorded fixtures, lockfiles, snapshots) is shown as a sample: its
+// meaning is in the code and tests that read it, and in full it overflows a
+// local model's context. Any other file's diff is cut at FILE_LIMIT.
+const DATA = /(\.(jsonl|ndjson|csv|tsv|parquet|snap|lock)$|(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|poetry\.lock|uv\.lock)$)/;
+const DATA_LINES = 8;
+const FILE_LIMIT = 40_000;
 
 const flags = {};
 for (let i = 2; i < process.argv.length; i += 2) flags[process.argv[i].replace(/^--/, '')] = process.argv[i + 1];
@@ -138,7 +144,10 @@ async function ask(system, schema, input) {
         ],
       }),
     });
-    if (!res.ok) unanswered(`### gmod review: the reviewer at ${LOCAL} answered ${res.status}; run it again`);
+    if (!res.ok) {
+      const why = (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300);
+      unanswered(`### gmod review: the reviewer at ${LOCAL} answered ${res.status}${why ? `: ${why}` : ''}; run it again, or make the change smaller (input was ${input.length} characters)`);
+    }
     const body = await res.json();
     // Thinking models may put their reasoning before the answer.
     const choice = body.choices?.[0] ?? {};
@@ -179,9 +188,38 @@ function parse(a) {
   }
 }
 
+// The diff the reviewer reads: whole, except data files (a sample of their
+// lines and a count) and any one file's diff past FILE_LIMIT (its start).
+function reviewDiff() {
+  const full = core.git(['diff', `${mb}...${head}`], { cwd: root });
+  const shortened = [];
+  const parts = full.split(/^(?=diff --git )/m).map(part => {
+    const path = part.match(/^diff --git a\/(.*?) b\//)?.[1] ?? '';
+    const lines = part.split('\n');
+    const at = lines.findIndex(l => l.startsWith('@@'));
+    if (at < 0) return part;
+    const body = lines.slice(at);
+    const added = body.filter(l => l.startsWith('+')).length;
+    const removed = body.filter(l => l.startsWith('-')).length;
+    if (DATA.test(path) && body.length > DATA_LINES + 1) {
+      shortened.push(path);
+      return `${lines.slice(0, at + 1).join('\n')}\n${body.slice(1, DATA_LINES + 1).join('\n')}\n[gmod: data file, shortened: ${added} lines added and ${removed} removed in all; the first ${DATA_LINES} shown]\n`;
+    }
+    if (part.length > FILE_LIMIT) {
+      shortened.push(path);
+      return `${part.slice(0, FILE_LIMIT)}\n[gmod: this file's diff is ${part.length} characters, cut at ${FILE_LIMIT}; ${added} lines added and ${removed} removed in all]\n`;
+    }
+    return part;
+  });
+  return { diff: parts.join(''), shortened };
+}
+function shortNote(s) {
+  return (s.length ? `\n\n<sub>Shortened for the reviewer: ${s.length > 6 ? `${s.slice(0, 6).join(', ')} and ${s.length - 6} more` : s.join(', ')} (data files show a sample).</sub>` : '');
+}
+
 async function reviewGovernance() {
   if (!LOCAL && !process.env.ANTHROPIC_API_KEY) unanswered('### gmod review: no reviewer for this governance change: set GMOD_REVIEW_URL, or ANTHROPIC_API_KEY');
-  const diff = core.git(['diff', `${mb}...${head}`], { cwd: root });
+  const { diff } = reviewDiff();
   if (diff.length > DIFF_LIMIT) unanswered(`### gmod review: the governance change is ${diff.length} characters, too big to review; split it`);
   const answer = await askFor(GOVERNANCE_SYSTEM, GOVERNANCE, `<diff>\n${diff}\n</diff>`);
   const r = answer.json;
@@ -196,7 +234,7 @@ async function reviewGovernance() {
 async function reviewJob() {
 if (!LOCAL && !process.env.ANTHROPIC_API_KEY) unanswered('### gmod review: no reviewer: set GMOD_REVIEW_URL, or ANTHROPIC_API_KEY (pull requests from forks get no key)');
 
-const diff = core.git(['diff', `${mb}...${head}`], { cwd: root });
+const { diff, shortened } = reviewDiff();
 if (diff.length > DIFF_LIMIT) unanswered(`### gmod review: the diff is ${diff.length} characters, too big to review; split the job`);
 // Only the accepted ADRs this change falls under (by their scope), each
 // with its rules: the reviewer answers every one.
@@ -243,6 +281,7 @@ const lines = [
     ? `<sub>AI review by ${answer.model}: advice only. The gate decides.</sub>`
     : `<sub>AI review by ${answer.model}. It advises; the gate decides. A maintainer can override a fail with the \`gmod-override\` label.</sub>`,
 ];
+if (shortened.length) lines[lines.length - 1] += shortNote(shortened);
 const overridden = r.overall === 'fail' && process.env.GMOD_REVIEW_OVERRIDE === '1';
 if (overridden) lines.splice(1, 0, '', '_Overridden by a maintainer._');
 done(lines.join('\n'), r.overall === 'fail' && !overridden && !ADVICE_ONLY ? 1 : 0);

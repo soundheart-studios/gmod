@@ -75,7 +75,7 @@ test('a reviewer that cannot answer stops a blocking review', async () => {
     r0.g('add', '-A'); r0.g('commit', '-q', '-m', 'add-sum: adds');
     const r = await review(r0.dir, { GMOD_REVIEW_URL: m.url }, '--branch', 'gmod/add-sum');
     assert.equal(r.code, 1, r.out);
-    assert.match(r.out, /answered 500; run it again/);
+    assert.match(r.out, /answered 500.*run it again/);
   } finally { m.close(); r0.done(); }
 });
 
@@ -98,5 +98,26 @@ test('a governance change is asked whether it weakens what is checked', async ()
     const over = await review(r0.dir, { GMOD_REVIEW_URL: m.url, GMOD_REVIEW_OVERRIDE: '1' }, '--branch', 'gmod/ci-tweak');
     assert.equal(over.code, 0, over.out);
     assert.match(over.out, /Overridden by a maintainer/);
+  } finally { m.close(); r0.done(); }
+});
+
+test('recorded data reaches the reviewer as a sample, not whole', async () => {
+  const r0 = repo();
+  const pass = { verdict: 'pass', evidence: 'src/sum.mjs:1' };
+  const m = await model(() => ({ summary: 'Adds sum.', criteria: [{ criterion: 'adds', ...pass }], tests_are_real: pass, stays_within_goal: pass, adrs: [], overall: 'pass' }));
+  try {
+    r0.g('switch', '-q', '-c', 'gmod/add-sum');
+    mkdirSync(join(r0.dir, 'src', 'days'), { recursive: true });
+    writeFileSync(join(r0.dir, 'src', 'sum.mjs'), 'export const sum = (a, b) => a + b;\n');
+    writeFileSync(join(r0.dir, 'src', 'days', 'AAPL.jsonl'), Array.from({ length: 5000 }, (_, i) => JSON.stringify({ t: i, c: '187.12' })).join('\n') + '\n');
+    r0.g('add', '-A'); r0.g('commit', '-q', '-m', 'add-sum: adds');
+    const r = await review(r0.dir, { GMOD_REVIEW_URL: m.url }, '--branch', 'gmod/add-sum');
+    assert.equal(r.code, 0, r.out);
+    const sent = m.asked[0].messages[1].content;
+    assert.match(sent, /export const sum/, 'code is sent whole');
+    assert.match(sent, /data file, shortened: 5000 lines added/);
+    assert.ok(!sent.includes('"t":4999'), 'the rest of the data is not sent');
+    assert.ok(sent.length < 20_000, `sent ${sent.length} characters`);
+    assert.match(r.out, /Shortened for the reviewer: src\/days\/AAPL\.jsonl/);
   } finally { m.close(); r0.done(); }
 });
