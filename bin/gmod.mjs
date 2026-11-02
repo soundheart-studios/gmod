@@ -56,10 +56,12 @@ const HELP = `gmod: planned work with proof, on plain git
                [--reviewer claude|local|none] [--review-url <url>] [--review-model <m>] [--blocking]
                [--owners @a,@b] [--url <gitea web address>] [--force]
                                   write the CI workflow (and CODEOWNERS) for this repository's forge
-  gmod pr [--job <id>] [--branch <b>] [--token-file <f>] [--url <u>]
+  gmod pr [--auto] [--job <id>] [--branch <b>] [--token-file <f>] [--url <u>]
                                   open the job's pull request (its branch pushed first);
-                                  asked again, answers with the one already open
-  gmod ci protect [--token-file <f>] [--url <u>] [--code-owners]
+                                  asked again, answers with the one already open. --auto: the
+                                  forge merges it once its checks pass (jobs only, never a plan,
+                                  ADR or CI change)
+  gmod ci protect [--token-file <f>] [--url <u>] [--code-owners] [--require-review]
                                   require the gate and up-to-date branches on main; no direct pushes
   gmod ci guard-claims --repo-path <bare repo> [--admins a,b]
                                   on the forge's machine: refuse moving claims, and letting go of
@@ -79,7 +81,7 @@ function parse(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith('--')) rest.push(a);
-    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners'].includes(a)) flags[a.slice(2)] = true;
+    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review'].includes(a)) flags[a.slice(2)] = true;
     else flags[a.slice(2)] = argv[++i];
   }
   return { cmd: rest[0], args: rest.slice(1), flags };
@@ -127,8 +129,8 @@ async function main() {
     const plan = core.planFromDisk(root);
     const id = flags.job ?? core.current(root)?.job;
     const j = id && plan?.jobs.find(x => x.id === id);
-    const r = await ci.openPr(root, { url: flags.url, token: ci.giteaToken({ file: flags['token-file'] }), main: plan?.main ?? 'main', job: id, goal: j?.goal, brief: j?.brief, branch: flags.branch });
-    return out(flags, r, `${r.existed ? 'already open' : 'opened'}: ${r.url}\n${r.title}`);
+    const r = await ci.openPr(root, { url: flags.url, token: ci.giteaToken({ file: flags['token-file'] }), main: plan?.main ?? 'main', job: id, goal: j?.goal, brief: j?.brief, branch: flags.branch, auto: !!flags.auto });
+    return out(flags, r, `${r.existed ? 'already open' : 'opened'}: ${r.url}\n${r.title}${r.auto ? '\nmerges by itself once its checks pass' : ''}`);
   }
   if (cmd === 'adr') return runAdr(root, args[0], args.slice(1), flags);
   switch (cmd) {
@@ -321,7 +323,7 @@ async function runCi(root, sub, flags) {
     return out(flags, r, `${r.files.map(f => `wrote ${f}`).join('\n')}\n${r.forge.kind} ${r.forge.owner}/${r.forge.repo}: ${next}`);
   }
   if (sub === 'protect') {
-    const r = await ci.ciProtect(root, { url: flags.url, token, main, codeOwners: !!flags['code-owners'] });
+    const r = await ci.ciProtect(root, { url: flags.url, token, main, codeOwners: !!flags['code-owners'], requireReview: !!flags['require-review'] });
     return out(flags, r, `${main} on ${r.forge.owner}/${r.forge.repo}: the gate required, branches must be up to date, no direct pushes`);
   }
   if (sub === 'check') {

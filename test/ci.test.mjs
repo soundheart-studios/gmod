@@ -108,6 +108,7 @@ function fakeGitea(state) {
         state.pulls.push(pr);
         return send(201, pr);
       }
+      if (/^\/api\/v1\/repos\/acme\/demo\/pulls\/\d+\/merge$/.test(req.url) && req.method === 'POST') return send(200, {});
       if (req.url.startsWith('/api/v1/repos/acme/demo/pulls?')) return send(200, state.pulls ?? []);
       if (req.url === '/v1/models') return send(200, { data: [{ id: 'qwen' }] });
       send(404, {});
@@ -221,5 +222,21 @@ test('gmod pr: the token from ~/.config, the address from git config, titled by 
 
     r = await spawnSyncAsync(dir, ['pr'], env);
     assert.match(r.out, /^already open: http:\/\/gitea\/acme\/demo\/pulls\/1/);
+    assert.equal(api.seen.filter(x => x.url.endsWith('/merge')).length, 0);
+
+    // --auto: Gitea merges it once the checks pass.
+    r = await spawnSyncAsync(dir, ['pr', '--auto'], env);
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, /merges by itself once its checks pass/);
+    const merge = api.seen.find(x => x.url === '/api/v1/repos/acme/demo/pulls/1/merge');
+    assert.deepEqual(merge.body, { Do: 'merge', merge_when_checks_succeed: true });
+
+    // Never a plan change: that waits for a person.
+    g('checkout', '-q', '-b', 'gmod/plan-more', 'origin/main');
+    writeFileSync(join(dir, '.gmod', 'plan.json'), JSON.stringify({ main: 'main', checks: { ok: 'true' }, jobs: [] }));
+    g('commit', '-q', '-am', 'plan: drop add-sum'); g('push', '-q', 'origin', 'gmod/plan-more');
+    r = await spawnSyncAsync(dir, ['pr', '--auto', '--job', 'plan'], env);
+    assert.equal(r.code, 1);
+    assert.match(r.err, /a plan change waits for a person: open it without --auto/);
   } finally { api.server.close(); rmSync(top, { recursive: true, force: true }); }
 });

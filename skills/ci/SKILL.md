@@ -42,6 +42,7 @@ Commit what it wrote **before** protecting main: once protected, the workflow it
 ```sh
 node <gmod>/bin/gmod.mjs ci protect                       # GitHub: through gh
 node <gmod>/bin/gmod.mjs ci protect    # Gitea: the person's token, from ~/.config/gmod/gitea-token
+node <gmod>/bin/gmod.mjs ci protect --require-review   # the review must pass too; job PRs opened with gmod pr --auto then land by themselves
 node <gmod>/bin/gmod.mjs ci check      # over ssh, once per host: git config --global gmod.<host>.url http://host:port
 ```
 

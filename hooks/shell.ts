@@ -46,3 +46,12 @@ export function movesClaims(cmd: string): boolean {
 export function decidesPlan(cmd: string): boolean {
   return /\bgmod(?:\.mjs)?['"]?\s+(?:adr\s+)?(?:approve|reject|accept)\b/.test(cmd)
 }
+
+// Merging a pull request by hand: the forge's CLI or its merge endpoint. An
+// agent hands a job over with gmod pr --auto, which lets the forge merge it
+// once the gate (and the review) pass, and never a plan, ADR or CI change.
+export function mergesPr(cmd: string): boolean {
+  // Commands, not prose: a commit message may name the endpoint or the CLI.
+  const calls = /(?:^|[;&|(]\s*)(?:curl|wget|http|xh)\b/m.test(cmd) || /\bfetch\(/.test(cmd)
+  return /(?:^|[;&|(]\s*)(?:gh|tea|glab)\s+(?:pr|pulls?|mr)\s+merge\b/m.test(cmd) || (calls && /\/pulls\/\d+\/merge\b/.test(cmd))
+}

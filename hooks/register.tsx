@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { GmodJob, GmodPhase, GmodProposal, GmodStatus } from '../types'
-import { decidesPlan, movesClaims, writesPlan, writesRecords } from './shell'
+import { decidesPlan, mergesPr, movesClaims, writesPlan, writesRecords } from './shell'
 
 // The mod is thin: every rule lives in the gmod command (bin/gmod.mjs), the
 // same one people run at a terminal and CI runs on pull requests.
@@ -289,6 +289,7 @@ export const register: Register = on => {
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const cmd = e.command
     if (movesClaims(cmd)) return { deny: 'gmod: claims change only through mcp__gmod__claim and mcp__gmod__release' }
+    if (mergesPr(cmd)) return { deny: 'gmod: pull requests merge through the forge once their checks pass (gmod pr --auto for a job); merging by hand is the person\'s call' }
     if (decidesPlan(cmd)) return { deny: "gmod: approving or rejecting the plan is the person's decision: they do it in the gmod pane or with /gmod approve" }
     if (writesRecords(cmd)) return { deny: "gmod: gmod's own records change only through gmod" }
     if (writesPlan(cmd) && !(await read($, allowPlan))) {
