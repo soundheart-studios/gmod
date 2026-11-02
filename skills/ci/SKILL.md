@@ -25,7 +25,7 @@ The repository needs a `.gmod/plan.json` first; if it has none, plan with `/gmod
    - Claude: needs an `ANTHROPIC_API_KEY` secret in the repository.
    - A local model: its OpenAI-compatible `/v1` address, as the runner sees it, e.g. `http://127.0.0.1:8080/v1`.
    - None: the gate alone.
-2. **Advice or a blocker?** Start with advice (comment only) unless they say otherwise; `--blocking` makes a "fail" fail the job. A maintainer overrides with the `gmod-override` label.
+2. **Advice or a blocker?** For work that lands without a person, `--blocking`: a "fail", or a reviewer that can't answer, stops the merge. Advice only (the default) just comments. A maintainer overrides a fail with the `gmod-override` label.
 3. **Where jobs run:**
    - GitHub's hosted runners (the default), with gmod checked out from a pinned repository (`--gmod-repo owner/gmod@v0.2.0`).
    - A self-hosted runner, by its label (`--runs-on <label>`). If gmod is installed on that machine, `--gmod-home <path>`.
@@ -42,7 +42,14 @@ Commit what it wrote **before** protecting main: once protected, the workflow it
 ```sh
 node <gmod>/bin/gmod.mjs ci protect                       # GitHub: through gh
 node <gmod>/bin/gmod.mjs ci protect    # Gitea: the person's token, from ~/.config/gmod/gitea-token
-node <gmod>/bin/gmod.mjs ci protect --require-review   # the review must pass too; job PRs opened with gmod pr --auto then land by themselves
+node <gmod>/bin/gmod.mjs ci protect --require-review   # the review must pass too
+```
+
+Then declare it, so nobody can quietly loosen it: `.gmod/protect.json` holds `{"require": ["gate", "review"], "up_to_date": true}`. With it on main, `gmod ci protect` applies it, the gate refuses every pull request while the live protection is weaker, and after each merge CI opens a "gmod breach" issue if something landed without what it requires. Add it in its own pull request (a governance change, like the workflow).
+
+Pull requests land on green by themselves: jobs through `mcp__gmod__commit` (or `gmod pr --auto`), and governance changes (plan, ADRs, CI, protect.json) through `gmod pr --auto`, which the review checks for anything that weakens what is checked. After each merge, CI brings every other open job branch up to date so its checks run again and it lands in turn.
+
+```sh
 node <gmod>/bin/gmod.mjs ci check      # over ssh, once per host: git config --global gmod.<host>.url http://host:port
 ```
 

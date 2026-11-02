@@ -131,6 +131,32 @@ test("a red from other checks doesn't count once the plan's checks change", () =
   } finally { w.done(); }
 });
 
+test('gmod commit finishes a job: only after red then green, pushed, as "<job>: …"', () => {
+  const w = world();
+  try {
+    gmod(w.alice, 'claim', 'add-sum');
+    write(w.alice, { 'src/sum.mjs': CODE, 'test/sum.test.mjs': TEST });
+    let r = gmod(w.alice, 'commit', '-m', 'sum adds', '--no-pr');
+    assert.equal(r.code, 1);
+    assert.match(r.err, /no failing run/);
+
+    write(w.alice, { 'src/sum.mjs': 'export const sum = () => 0;\n' });
+    gmod(w.alice, 'check');
+    write(w.alice, { 'src/sum.mjs': CODE });
+    gmod(w.alice, 'check');
+    // The gate in front of a commit judges the worktree named, wherever it runs.
+    assert.equal(gmod(w.bob, 'gate-commit', '--shell', '--dir', w.alice).code, 0);
+    assert.equal(gmod(w.bob, 'gate-commit', '--shell').code, 1);
+
+    r = gmod(w.alice, 'commit', '-m', 'sum adds', '--trailer', 'Co-Authored-By: A <a@x.io>', '--trailer', 'Refs: 1', '--no-pr');
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, /committed \w+ on gmod\/add-sum: add-sum: sum adds\npushed gmod\/add-sum/);
+    const msg = sh(w.alice, 'git', ['log', '-1', '--format=%B', 'origin/gmod/add-sum']);
+    assert.equal(msg, 'add-sum: sum adds\n\nCo-Authored-By: A <a@x.io>\nRefs: 1');
+    assert.equal(sh(w.alice, 'git', ['status', '--porcelain']), '');
+  } finally { w.done(); }
+});
+
 test('CI: verify passes real work and refuses the rest', () => {
   const w = world();
   try {
@@ -154,7 +180,7 @@ test('CI: verify passes real work and refuses the rest', () => {
 
     // No claim.
     const bob = gmod(w.bob, 'verify', '--base', 'origin/main', '--head', 'HEAD', '--title', 'add-sum: x');
-    assert.match(bob.out, /nothing to show|no code|nobody claimed/);
+    assert.match(bob.out, /nothing to show|no code|nobody claimed|nothing changed between/);
   } finally { w.done(); }
 });
 

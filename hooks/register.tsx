@@ -20,15 +20,16 @@ const phaseOpen = atom({ plugin: 'gmod', key: 'phaseOpen' } as const, {})
 const ROUTINE = `This repository plans its work in .gmod/plan.json, and the gmod mod enforces it:
 - Take work with mcp__gmod__next and mcp__gmod__claim. Change only the claimed job's files; edits elsewhere are refused. Keep the job's journal with mcp__gmod__note: intent, decisions, dead ends.
 - Write or change the tests first, run mcp__gmod__check and see it fail (red). Then make it pass and run mcp__gmod__check again (green).
-- Commit only after green on exactly the files you commit, with the subject "<job>: …". The commit is refused otherwise.
+- Hand the work over with mcp__gmod__commit once it is green: it commits exactly what the passing check ran on as "<job>: …", pushes, and opens the pull request, which lands by itself once CI's checks pass. Don't run git commit yourself, and never merge a pull request. mcp__gmod__pr_status says how its checks went; fix what they found and commit again.
+- If a command or tool is denied, don't look for another way to do the same thing (another file, another session, another agent): say what was denied and stop.
 - Plan changes are drafted with mcp__gmod__propose_phase / propose_job, edit_job and drop_job (bigger plans group jobs into phases, each with an outcome, ordered after other phases), then described with mcp__gmod__describe_proposal (one plain sentence of why, and your assumptions); the person approves them in the gmod pane or with /gmod approve. Never write .gmod/plan.json yourself.
-- The pull request runs the same checks in CI and proves the tests fail without your change, then an AI reviewer reads it.`
+- CI runs the same checks, proves the tests fail without your change, and an AI reviewer reads it against the job and the ADRs.`
 
 // What a subagent is told, since its own prompt is the parent's call.
 const FOR_SUBAGENTS = `
 
 ---
-This repository's work is governed by gmod (.gmod/plan.json). If you work in a worktree of your own, pass its path as "dir" to every mcp__gmod__ tool, and claim your own job there before changing files. Edits outside the claimed job's files are refused; a commit needs a failing mcp__gmod__check first, then a passing one on exactly what you commit, with the subject "<job>: …".`
+This repository's work is governed by gmod (.gmod/plan.json). If you work in a worktree of your own, pass its path as "dir" to every mcp__gmod__ tool, and claim your own job there before changing files. Edits outside the claimed job's files are refused. Run mcp__gmod__check while it fails, then again once it passes, then finish the job yourself with mcp__gmod__commit (with "dir"): it commits, pushes and opens the pull request that lands on green. Don't run git commit, don't hand the commit back to the agent that started you, and if anything is denied, report it and stop: never try another way round.`
 
 // The steps a job takes to main. Red then green is one step, "test": its
 // dot is red while failing, green once it passes after failing.
@@ -96,7 +97,7 @@ async function guard($: EngineInterface, path: string): Promise<string | null> {
 // worktree's claim and runs decide.
 function gated(cli: string, command: string): string {
   const q = `'${cli.replace(/'/g, `'\\''`)}'`
-  return `git() { _gs=; _gk=0; for _ga in "$@"; do if [ "$_gk" = 1 ]; then _gk=0; continue; fi; case "$_ga" in -C|-c|--git-dir|--work-tree|--namespace) _gk=1;; -*) ;; *) _gs="$_ga"; break;; esac; done; if [ "$_gs" = commit ]; then node ${q} gate-commit --shell || return 1; fi; command git "$@"; }\n${command}`
+  return `git() { _gs=; _gk=0; _gp=; _gd=.; for _ga in "$@"; do if [ "$_gk" = 1 ]; then _gk=0; [ "$_gp" = -C ] && _gd="$_ga"; continue; fi; case "$_ga" in -C|-c|--git-dir|--work-tree|--namespace) _gk=1; _gp="$_ga";; -*) ;; *) _gs="$_ga"; break;; esac; done; if [ "$_gs" = commit ]; then node ${q} gate-commit --shell --dir "$_gd" || return 1; fi; command git "$@"; }\n${command}`
 }
 
 // One dot per step, under the step's name: each column is the name's width
@@ -168,6 +169,8 @@ export const register: Register = on => {
     await $.tool.register({ name: 'next', description: 'The first job in .gmod/plan.json that is ready to take, with its goal.', inputSchema: { type: 'object', properties: DIR }, isDeferred: false })
     await $.tool.register({ name: 'claim', description: 'Claim a job before changing any of its files. Claims are shared through git; the first claim wins.', inputSchema: { type: 'object', properties: { job: { type: 'string' }, ...DIR }, required: ['job'] }, isDeferred: false })
     await $.tool.register({ name: 'check', description: "Run the claimed job's criteria and record the result: red while they fail, green once they pass. A commit needs red first, then green on exactly the files committed.", inputSchema: { type: 'object', properties: DIR }, isDeferred: false })
+    await $.tool.register({ name: 'commit', description: 'Finish the claimed job: commit exactly what the last passing check ran on, as "<job>: <message>", push its branch, and open its pull request, which lands by itself once CI passes. Refused until the check failed first and then passed on these very files.', inputSchema: { type: 'object', properties: { message: { type: 'string', description: 'What the work does, in a few words; "<job>: " is added' }, trailers: { type: 'array', items: { type: 'string' }, description: 'Lines for the end of the message, e.g. Co-Authored-By' }, ...DIR }, required: ['message'] }, isDeferred: false })
+    await $.tool.register({ name: 'pr_status', description: "How the claimed job's pull request is doing: its checks, and the gate's and the AI review's reports.", inputSchema: { type: 'object', properties: DIR }, isDeferred: false })
     await $.tool.register({ name: 'release', description: 'Let go of the claimed job, for example to hand it back unfinished.', inputSchema: { type: 'object', properties: DIR }, isDeferred: false })
     await $.tool.register({ name: 'status', description: 'The claimed job, its allowed files, its criteria, the recorded runs, every job\'s stage, and any drafted plan change.', inputSchema: { type: 'object', properties: DIR }, isDeferred: false })
     await $.tool.register({ name: 'propose_job', description: 'Draft a new job, or replace one, in the plan proposal. The person sees the draft in the gmod pane and approves it there or with /gmod approve. Keep jobs small: one reviewable pull request each.', inputSchema: { type: 'object', properties: { job: JOB, checks: CHECKS }, required: ['job'] }, isDeferred: false })
@@ -202,6 +205,17 @@ export const register: Register = on => {
     const r = await gmod($, ['check'], arg(e, 'dir'))
     await refresh($)
     return withNotice($, { result: text(r) } as ToolCallResult, arg(e, 'dir') || (await $.session.cwd()))
+  })
+  on('tool.call', { tool: 'mcp__gmod__commit' }, async ($, e) => {
+    const raw = (e as Record<string, unknown>).trailers
+    const trailers = Array.isArray(raw) ? raw.map(String) : []
+    const r = await gmod($, ['commit', '--message', String(arg(e, 'message') ?? ''), ...trailers.flatMap(t => ['--trailer', t])], arg(e, 'dir'))
+    await refresh($)
+    return r.exitCode === 0 ? { result: text(r) } : { deny: text(r) }
+  })
+  on('tool.call', { tool: 'mcp__gmod__pr_status' }, async ($, e) => {
+    const r = await gmod($, ['pr', '--status'], arg(e, 'dir'))
+    return r.exitCode === 0 ? { result: text(r) } : { deny: text(r) }
   })
   on('tool.call', { tool: 'mcp__gmod__release' }, async ($, e) => {
     const r = await gmod($, ['release'], arg(e, 'dir'))

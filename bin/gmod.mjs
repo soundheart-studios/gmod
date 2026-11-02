@@ -56,6 +56,12 @@ const HELP = `gmod: planned work with proof, on plain git
                [--reviewer claude|local|none] [--review-url <url>] [--review-model <m>] [--blocking]
                [--owners @a,@b] [--url <gitea web address>] [--force]
                                   write the CI workflow (and CODEOWNERS) for this repository's forge
+  gmod commit [-m <text>] [--trailer <line>]... [--no-push] [--no-pr]
+                                  commit the claimed job's work (what the last passing check ran
+                                  on, as "<job>: …"), push it and open its pull request to land on
+                                  green; refused until it failed, then passed, on exactly these files
+  gmod pr --status [--branch <b>] how this branch's pull request is doing: its checks, and the
+                                  gate's and the review's reports
   gmod pr [--auto] [--job <id>] [--branch <b>] [--token-file <f>] [--url <u>]
                                   open the job's pull request (its branch pushed first);
                                   asked again, answers with the one already open. --auto: the
@@ -81,7 +87,8 @@ function parse(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith('--')) rest.push(a);
-    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review'].includes(a)) flags[a.slice(2)] = true;
+    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr'].includes(a)) flags[a.slice(2)] = true;
+    else if (a === '--trailer') (flags.trailer ??= []).push(argv[++i]);
     else flags[a.slice(2)] = argv[++i];
   }
   return { cmd: rest[0], args: rest.slice(1), flags };
@@ -125,6 +132,26 @@ async function main() {
   }
   const root = core.repoRoot();
   if (cmd === 'ci') return runCi(root, args[0], flags);
+  if (cmd === 'commit') {
+    const r = core.commitJob(root, { message: flags.message ?? args.filter(x => x !== '-m').join(' '), trailers: flags.trailer ?? [] });
+    const lines = [`committed ${r.commit.slice(0, 10)} on ${r.branch}: ${r.subject}`];
+    if (flags['no-push']) return out(flags, r, lines.join('\n'));
+    core.git(['push', '-q', '-u', 'origin', r.branch], { cwd: root });
+    lines.push(`pushed ${r.branch}`);
+    if (flags['no-pr']) return out(flags, r, lines.join('\n'));
+    const plan = core.planFromDisk(root);
+    const j = plan.jobs.find(x => x.id === r.job);
+    const pr = await ci.openPr(root, { url: flags.url, token: ci.giteaToken({ file: flags['token-file'] }), main: plan.main ?? 'main', job: r.job, goal: j?.goal, brief: j?.brief, branch: r.branch, auto: true });
+    lines.push(`${pr.existed ? 'already open' : 'opened'}: ${pr.url}`, 'lands by itself once its checks pass (gmod pr --status says how they went)');
+    return out(flags, { ...r, pr }, lines.join('\n'));
+  }
+  if (cmd === 'pr' && flags.status) {
+    const r = await ci.prStatus(root, { url: flags.url, token: ci.giteaToken({ file: flags['token-file'] }), branch: flags.branch });
+    const lines = [`#${r.number} ${r.state}: ${r.url}`, ...r.checks.map(c => `${{ success: '✅', failure: '❌', error: '❌', pending: '⏳', skipped: '➖' }[c.state] ?? '·'} ${c.context}: ${c.state}`)];
+    if (r.reports) lines.push('', ...r.reports);
+    else lines.push(`(${r.note})`);
+    return out(flags, r, lines.join('\n'));
+  }
   if (cmd === 'pr') {
     const plan = core.planFromDisk(root);
     const id = flags.job ?? core.current(root)?.job;
@@ -178,7 +205,7 @@ async function main() {
       return out(flags, r, `noted in ${r.file}`);
     }
     case 'gate-commit': {
-      const r = core.gateCommit(root);
+      const r = core.gateCommit(flags.dir ? core.repoRoot(flags.dir) : root);
       // --shell: run in front of a commit, inside the agent's own shell.
       if (flags.shell) {
         if (!r.ok) console.error(`gmod refused the commit: ${r.reason}`);
@@ -251,6 +278,17 @@ async function main() {
       if (!flags.base) throw new core.GmodError('gmod verify --base <ref>');
       core.syncClaims(root);
       const r = core.verify(root, { base: flags.base, head: flags.head ?? 'HEAD', branch: flags.branch ?? '', title: flags.title ?? '' });
+      // main's live protection, held to what main declares (.gmod/protect.json
+      // on the base): weakened by hand, the next pull request is refused.
+      if (r.mode !== 'ungoverned' && r.mode !== 'empty') {
+        const mb = core.git(['merge-base', flags.base, flags.head ?? 'HEAD'], { cwd: root });
+        const spec = core.protectSpec(root, mb);
+        const f = await ci.protectionMatches(root, { spec, url: flags.url, token: process.env.GMOD_TOKEN || ci.giteaToken({ file: flags['token-file'] }), main: core.planAt(root, mb)?.main ?? 'main' }).catch(e => ({ ok: false, msg: `couldn't compare main's protection: ${e.message}` }));
+        if (f) {
+          r.findings.push(f);
+          r.ok = r.ok && f.ok;
+        }
+      }
       const md = core.report(r);
       if (flags.report) (await import('node:fs')).writeFileSync(flags.report, md + '\n');
       out(flags, r, md);

@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { detectForge, workflow } from '../lib/ci.mjs';
+import { detectForge, protectionMatches, workflow } from '../lib/ci.mjs';
 
 const GMOD = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'gmod.mjs');
 
@@ -231,12 +231,92 @@ test('gmod pr: the token from ~/.config, the address from git config, titled by 
     const merge = api.seen.find(x => x.url === '/api/v1/repos/acme/demo/pulls/1/merge');
     assert.deepEqual(merge.body, { Do: 'merge', merge_when_checks_succeed: true });
 
-    // Never a plan change: that waits for a person.
+    // A plan change lands on green too: the gate and the review judge it.
     g('checkout', '-q', '-b', 'gmod/plan-more', 'origin/main');
     writeFileSync(join(dir, '.gmod', 'plan.json'), JSON.stringify({ main: 'main', checks: { ok: 'true' }, jobs: [] }));
     g('commit', '-q', '-am', 'plan: drop add-sum'); g('push', '-q', 'origin', 'gmod/plan-more');
     r = await spawnSyncAsync(dir, ['pr', '--auto', '--job', 'plan'], env);
-    assert.equal(r.code, 1);
-    assert.match(r.err, /a plan change waits for a person: open it without --auto/);
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, /merges by itself once its checks pass/);
   } finally { api.server.close(); rmSync(top, { recursive: true, force: true }); }
+});
+
+test('the workflow compares against the pull request base, and checks what landed', () => {
+  const y = workflow({ forge: 'gitea', runsOn: 'ai-local', gmod: { path: '/g' }, reviewer: { kind: 'local', url: 'http://m/v1' }, blocking: true });
+  assert.match(y, /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
+  assert.match(y, /verify --base "\$\{BASE_SHA:-origin\/\$BASE\}"/);
+  assert.match(y, /review\.mjs" --base "\$\{BASE_SHA:-origin\/\$BASE\}"/);
+  assert.match(y, /ci\/after-merge\.mjs"\n {8}env:\n {10}GMOD_TOKEN: \$\{\{ github\.token \}\}\n {10}GMOD_SHA: \$\{\{ github\.sha \}\}/);
+  assert.doesNotMatch(y, /GMOD_REVIEW_MODE/);
+});
+
+test("main's live protection is held to .gmod/protect.json", async () => {
+  const state = { rule: { enable_status_check: true, status_check_contexts: ['gmod / gate*'], block_on_outdated_branch: true, enable_push: false } };
+  const api = await fakeGitea(state);
+  const dir = repo(`${api.url}/acme/demo.git`);
+  try {
+    const spec = { require: ['gate', 'review'], up_to_date: true };
+    let f = await protectionMatches(dir, { spec, token: 't' });
+    assert.equal(f.ok, false);
+    assert.match(f.msg, /weaker than \.gmod\/protect\.json: the review isn't required/);
+    state.rule.status_check_contexts.push('gmod / review*');
+    f = await protectionMatches(dir, { spec, token: 't' });
+    assert.equal(f.ok, true, f.msg);
+    state.rule.enable_push = true;
+    state.rule.block_on_outdated_branch = false;
+    f = await protectionMatches(dir, { spec, token: 't' });
+    assert.match(f.msg, /branches needn't be up to date, direct pushes are allowed/);
+    assert.equal(await protectionMatches(dir, { spec: null, token: 't' }), null);
+    assert.match((await protectionMatches(dir, { spec })).msg, /no token/);
+  } finally { api.server.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('after a merge: a breach opens an issue, and behind job branches take main in', async () => {
+  const dir = repo();
+  const g = (...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).trim();
+  g('config', 'user.email', 'a@x.io'); g('config', 'user.name', 'a');
+  mkdirSync(join(dir, '.gmod'));
+  writeFileSync(join(dir, '.gmod', 'plan.json'), JSON.stringify({ main: 'main', checks: {}, jobs: [] }));
+  writeFileSync(join(dir, '.gmod', 'protect.json'), JSON.stringify({ require: ['gate', 'review'] }));
+  g('add', '-A'); g('commit', '-q', '-m', 'governance');
+  const before = g('rev-parse', 'HEAD');
+  writeFileSync(join(dir, 'x'), 'x\n'); g('add', '-A'); g('commit', '-q', '-m', 'landed');
+  const landed = g('rev-parse', 'HEAD');
+
+  const seen = [];
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', c => (body += c));
+    req.on('end', () => {
+      seen.push({ method: req.method, url: req.url, body: body ? JSON.parse(body) : null });
+      const send = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
+      const base = '/api/v1/repos/acme/demo';
+      if (req.url.startsWith(`${base}/pulls?state=closed`)) return send(200, [{ number: 7, merged: true, merge_commit_sha: landed, head: { sha: 'h7' } }]);
+      if (req.url === `${base}/commits/h7/status`) return send(200, { statuses: [{ context: 'gmod / review (pull_request)', status: 'failure' }, { context: 'gmod / gate (pull_request)', status: 'success' }] });
+      if (req.url === `${base}/issues` && req.method === 'POST') return send(201, { number: 9 });
+      if (req.url.startsWith(`${base}/pulls?state=open`)) return send(200, [
+        { number: 8, head: { ref: 'gmod/behind', sha: before, repo: { full_name: 'acme/demo' } } },
+        { number: 10, head: { ref: 'gmod/current', sha: landed, repo: { full_name: 'acme/demo' } } },
+        { number: 11, head: { ref: 'someone-else', sha: before, repo: { full_name: 'acme/demo' } } },
+      ]);
+      if (req.url === `${base}/pulls/8/update?style=merge`) return send(200, {});
+      send(404, {});
+    });
+  });
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const r = await new Promise(ok => {
+      const p = spawn('node', [join(dirname(GMOD), '..', 'ci', 'after-merge.mjs')], { cwd: dir, env: { ...process.env, GITHUB_SERVER_URL: url, GITHUB_REPOSITORY: 'acme/demo', GMOD_TOKEN: 't', GMOD_SHA: landed, GITHUB_API_URL: '' } });
+      let out = '';
+      p.stdout.on('data', d => (out += d));
+      p.stderr.on('data', d => (out += d));
+      p.on('close', code => ok({ code, out }));
+    });
+    assert.equal(r.code, 1, r.out);
+    const issue = seen.find(x => x.url.endsWith('/issues') && x.method === 'POST');
+    assert.match(issue.body.title, /^gmod breach: #7 merged with its review failure$/);
+    assert.match(r.out, /#8 \(gmod\/behind\) takes main in/);
+    assert.equal(seen.filter(x => x.url.includes('/update')).length, 1, 'only the job branch that is behind');
+  } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
