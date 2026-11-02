@@ -260,6 +260,14 @@ test('the workflow compares against the pull request base, and checks what lande
   assert.doesNotMatch(y, /GMOD_REVIEW_MODE/);
 });
 
+test("the workflow installs the project's own dependencies before the gate and the review", () => {
+  const y = workflow({ forge: 'gitea', runsOn: 'ai-local', gmod: { path: '/g' }, reviewer: { kind: 'local', url: 'http://m/v1' }, setup: 'uv sync --frozen\nnpm --prefix web ci' });
+  const step = '      - name: Install project dependencies\n        run: |\n          uv sync --frozen\n          npm --prefix web ci\n';
+  assert.equal(y.split(step).length, 3, 'once in the gate, once in the review');
+  assert.ok(y.indexOf(step) < y.indexOf('The deterministic gate'));
+  assert.doesNotMatch(workflow({ forge: 'gitea', runsOn: 'x', gmod: { path: '/g' } }), /Install project dependencies/);
+});
+
 test("main's live protection is held to .gmod/protect.json", async () => {
   const state = { rule: { enable_status_check: true, status_check_contexts: ['gmod / gate (pull_request)'], block_on_outdated_branch: true, enable_push: false } };
   const api = await fakeGitea(state);

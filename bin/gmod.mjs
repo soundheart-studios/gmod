@@ -54,7 +54,7 @@ const HELP = `gmod: planned work with proof, on plain git
 
   gmod ci init [--runs-on <label>] (--gmod-home <path> | --gmod-repo <owner/repo>[@ref] [--gmod-token-secret <name>])
                [--reviewer claude|local|none] [--review-url <url>] [--review-model <m>] [--blocking]
-               [--owners @a,@b] [--url <gitea web address>] [--force]
+               [--owners @a,@b] [--url <gitea web address>] [--setup <commands, or a file of them>] [--force]
                                   write the CI workflow (and CODEOWNERS) for this repository's forge
   gmod commit [-m <text>] [--trailer <line>]... [--no-push] [--no-pr]
                                   commit the claimed job's work (what the last passing check ran
@@ -360,6 +360,8 @@ async function runCi(root, sub, flags) {
       owners: flags.owners ? flags.owners.split(',').map(x => x.trim()).filter(Boolean) : [],
       main,
       force: !!flags.force,
+      // A file, or the commands themselves.
+      setup: flags.setup ? ((await import('node:fs')).existsSync(flags.setup) ? (await import('node:fs')).readFileSync(flags.setup, 'utf8') : flags.setup) : '',
     });
     const next = 'commit it, then: gmod ci protect';
     return out(flags, r, `${r.files.map(f => `wrote ${f}`).join('\n')}\n${r.forge.kind} ${r.forge.owner}/${r.forge.repo}: ${next}`);
