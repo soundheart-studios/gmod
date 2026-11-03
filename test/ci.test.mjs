@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { detectForge, protectionMatches, workflow } from '../lib/ci.mjs';
+import { detectForge, openPr, protectionMatches, workflow } from '../lib/ci.mjs';
 
 const GMOD = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'gmod.mjs');
 
@@ -427,4 +427,36 @@ test('what is not landing gets a "gmod stuck" issue, closed once it is gone', as
     assert.ok(seen.some(x => x.method === 'PATCH' && x.url.endsWith('/issues/30') && x.body.state === 'closed'), 'a job no longer waiting has its issue closed');
     assert.ok(!seen.some(x => x.url.endsWith('/issues/31') || x.url.endsWith('/issues/32')));
   } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('on GitHub, opening a pull request to land on green never merges it from here', async () => {
+  // gh pr merge --auto on a repository with no required checks merges at
+  // once, before anything has run: landing is the gmod action's alone.
+  const root = mkdtempSync(join(tmpdir(), 'gmod-ghpr-'));
+  const bare = join(root, 'origin.git');
+  const dir = join(root, 'work');
+  const g = (...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).trim();
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
+  execFileSync('git', ['clone', '-q', bare, dir], { stdio: 'ignore' });
+  g('config', 'user.email', 'a@x.io'); g('config', 'user.name', 'a');
+  writeFileSync(join(dir, 'README.md'), 'x\n'); g('add', '-A'); g('commit', '-q', '-m', 'seed'); g('push', '-q', 'origin', 'main');
+  g('switch', '-q', '-c', 'gmod/add-sum');
+  mkdirSync(join(dir, 'src')); writeFileSync(join(dir, 'src', 'sum.mjs'), 'export const sum = (a, b) => a + b;\n');
+  g('add', '-A'); g('commit', '-q', '-m', 'add-sum: adds'); g('push', '-q', '-u', 'origin', 'gmod/add-sum');
+  const log = join(root, 'gh.log');
+  const fake = join(root, 'gh');
+  writeFileSync(fake, `#!/bin/sh\necho "$@" >> '${log}'\ncat >/dev/null\necho https://github.com/acme/app/pull/7\n`, { mode: 0o755 });
+  const before = process.env.GMOD_GH;
+  process.env.GMOD_GH = fake;
+  try {
+    const r = await openPr(dir, { forge: { kind: 'github', owner: 'acme', repo: 'app' }, job: 'add-sum', goal: 'Adds', auto: true });
+    assert.equal(r.url, 'https://github.com/acme/app/pull/7');
+    assert.equal(r.landing, 'the gmod action');
+    const calls = readFileSync(log, 'utf8').trim().split('\n');
+    assert.ok(calls.some(c => c.startsWith('pr create')), calls.join('; '));
+    assert.ok(!calls.some(c => c.startsWith('pr merge')), `nothing merges from here: ${calls.join('; ')}`);
+  } finally {
+    if (before === undefined) delete process.env.GMOD_GH; else process.env.GMOD_GH = before;
+    rmSync(root, { recursive: true, force: true });
+  }
 });
