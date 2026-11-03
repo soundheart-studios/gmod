@@ -52,6 +52,12 @@ The GitHub account is personal, not an organization. That rules out the merge qu
 - **reviewer-compat:** fall back from `json_schema` to `json_object`, so DeepSeek and other OpenAI-compatible reviewers work.
   - Done when: a review against DeepSeek's flash model answers on the test repository.
 
+### 3b · Free private repositories
+Found while setting up the test bed: on a personal account without Pro, a private repository gets no branch protection and no auto-merge.
+- **land-without-forge:** when the forge can't auto-merge, gmod merges the pull request itself once gate and review have passed on an up-to-date branch.
+- **protect-unavailable:** when the forge can't protect `main`, `.gmod/protect.json` is held by the after-merge tripwire alone. The gate says so once instead of refusing every pull request.
+  - Done when: on `gmod-test-gh` (private, no Pro), a job lands on green with nobody merging it, and a direct push to `main` opens a breach issue.
+
 ### 4 · One command
 - **setup:** `gmod setup` detects the forge and asks two questions. It writes the workflow, sets the secrets, applies protection, opens the governance pull request, and proves it all with a test pull request.
 - **doctor:** one ✅/❌ screen with a fix for every ❌; replaces `ci check`.
@@ -78,7 +84,7 @@ The GitHub account is personal, not an organization. That rules out the merge qu
 ## What I need from you
 
 - **GitHub:** done. `gh` is signed in as soundheart-studios with `repo` and `workflow` scopes.
-- **Creating a second private repository**, `gmod-test-gh`, for the test bed.
+- **The test repository:** `soundheart-studios/gmod-test-gh` is created, and `GMOD_REVIEW_KEY` is set. The reviewer model is `deepseek-flash`.
 - **The reviewer key** for that repository: DeepSeek's key as the secret `GMOD_REVIEW_KEY`, and the flash model's exact id as the variable `GMOD_REVIEW_MODEL`. You set the key: `gh secret set GMOD_REVIEW_KEY -R soundheart-studios/gmod-test-gh`.
-- **Whether the account has GitHub Pro.** It decides whether private repositories get branch protection.
+- **GitHub Pro:** not on this account, so phase 3b covers it.
 - **Images on ghcr.io are private by default.** The test repository needs read access to the image, granted in the package's settings. That's a one-time click in the package's settings.
