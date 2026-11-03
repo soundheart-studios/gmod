@@ -38,6 +38,23 @@ test('the forge, from origin', () => {
   }
 });
 
+test('an ssh alias for GitHub (a second key) is still GitHub', () => {
+  const dir = repo('git@github-2:acme/app.git');
+  const config = join(dir, 'ssh_config');
+  writeFileSync(config, 'Host github-2\n  HostName github.com\n  User git\n');
+  const before = process.env.GMOD_SSH_CONFIG;
+  process.env.GMOD_SSH_CONFIG = config;
+  try {
+    const got = detectForge(dir);
+    assert.equal(got.kind, 'github');
+    assert.equal(got.owner, 'acme');
+    assert.equal(got.repo, 'app');
+  } finally {
+    if (before === undefined) delete process.env.GMOD_SSH_CONFIG; else process.env.GMOD_SSH_CONFIG = before;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('the workflow: GitHub, gmod from a pinned repo, Claude reviewing, comment only', () => {
   const y = workflow({ forge: 'github', gmod: { repo: 'acme/gmod', ref: 'v0.2.0' }, reviewer: { kind: 'claude' } });
   assert.match(y, /runs-on: ubuntu-latest/);
