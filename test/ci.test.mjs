@@ -460,3 +460,65 @@ test('on GitHub, opening a pull request to land on green never merges it from he
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('after a merge on GitHub: the tripwire, catch-up that starts its own checks, and stuck reports', async () => {
+  const dir = repo();
+  const g = (...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).trim();
+  g('config', 'user.email', 'a@x.io'); g('config', 'user.name', 'a');
+  mkdirSync(join(dir, '.gmod'));
+  writeFileSync(join(dir, '.gmod', 'plan.json'), JSON.stringify({ main: 'main', checks: {}, jobs: [] }));
+  writeFileSync(join(dir, '.gmod', 'protect.json'), JSON.stringify({ require: ['gate', 'review'] }));
+  g('add', '-A'); g('commit', '-q', '-m', 'governance');
+  writeFileSync(join(dir, 'x'), 'x\n'); g('add', '-A'); g('commit', '-q', '-m', 'landed');
+  const landed = g('rev-parse', 'HEAD');
+  const hoursAgo = h => new Date(Date.now() - h * 3_600_000).toISOString();
+
+  const seen = [];
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', c => (body += c));
+    req.on('end', () => {
+      seen.push({ method: req.method, url: req.url, auth: req.headers.authorization, body: body ? JSON.parse(body) : null });
+      const send = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
+      const base = '/repos/acme/app';
+      if (req.url === `${base}/commits/${landed}/pulls`) return send(200, [{ number: 4, merged_at: hoursAgo(0), merge_commit_sha: landed, head: { sha: 'h4' } }]);
+      // GitHub's combined status: "state", and no "(pull_request)" in the name.
+      if (req.url === `${base}/commits/h4/status`) return send(200, { statuses: [{ context: 'gmod / gate', state: 'success' }, { context: 'gmod / review', state: 'failure' }] });
+      if (req.url.startsWith(`${base}/pulls?state=open`)) return send(200, [
+        { number: 8, updated_at: hoursAgo(0.1), head: { ref: 'gmod/behind', sha: 'h8', repo: { full_name: 'acme/app' } } },
+        { number: 9, updated_at: hoursAgo(5), head: { ref: 'gmod/failing', sha: 'h9', repo: { full_name: 'acme/app' } } },
+      ]);
+      if (req.url === `${base}/compare/main...h8`) return send(200, { behind_by: 1 });
+      if (req.url === `${base}/compare/main...h9`) return send(200, { behind_by: 0 });
+      if (req.url === `${base}/pulls/8/update-branch` && req.method === 'PUT') return send(202, {});
+      if (req.url === `${base}/dispatches` && req.method === 'POST') { res.writeHead(204); return res.end(); }
+      if (req.url === `${base}/commits/h8/status`) return send(200, { statuses: [] });
+      if (req.url === `${base}/commits/h9/status`) return send(200, { statuses: [{ context: 'gmod / review', state: 'failure', updated_at: hoursAgo(5) }] });
+      // GitHub lists pull requests among issues.
+      if (req.url.startsWith(`${base}/issues?state=open`)) return send(200, [{ number: 9, title: 'gmod stuck: failing', pull_request: {} }]);
+      if (req.url === `${base}/issues` && req.method === 'POST') return send(201, { number: 20 + seen.length });
+      send(404, {});
+    });
+  });
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const r = await new Promise(ok => {
+      const p = spawn('node', [join(dirname(GMOD), '..', 'ci', 'after-merge.mjs')], { cwd: dir, env: { ...process.env, GMOD_FORGE: 'github', GITHUB_API_URL: url, GITHUB_SERVER_URL: '', GITHUB_REPOSITORY: 'acme/app', GMOD_TOKEN: 't', GMOD_SHA: landed, GMOD_FORGE_TOKEN: '', GITHUB_EVENT_NAME: 'repository_dispatch' } });
+      let out = '';
+      p.stdout.on('data', d => (out += d));
+      p.stderr.on('data', d => (out += d));
+      p.on('close', code => ok({ code, out }));
+    });
+    assert.equal(r.code, 1, r.out);
+    assert.ok(seen.every(x => x.auth === 'Bearer t'), 'GitHub takes a bearer token');
+    const opened = seen.filter(x => x.method === 'POST' && x.url.endsWith('/issues')).map(x => x.body.title);
+    assert.ok(opened.includes('gmod breach: #4 merged with its review failure'), opened.join('; '));
+    assert.ok(seen.some(x => x.method === 'PUT' && x.url.endsWith('/pulls/8/update-branch') && x.body.expected_head_sha === 'h8'));
+    const d = seen.find(x => x.url.endsWith('/dispatches'));
+    assert.deepEqual(d.body, { event_type: 'gmod', client_payload: { check: 8 } }, "CI's own token can start a run only this way");
+    assert.match(r.out, /#8 \(gmod\/behind\) takes main in; its checks are started again/);
+    assert.ok(!seen.some(x => x.url.endsWith('/pulls/9/update-branch')), 'a branch that is current is left alone');
+    assert.ok(opened.includes('gmod stuck: failing'), 'a pull request listed among issues is not a stuck issue already filed');
+  } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
+});

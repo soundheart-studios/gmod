@@ -15,29 +15,34 @@
 //    each, titled "gmod stuck: <job>", closed again once it is gone. Also
 //    run hourly (the workflow's schedule), where step 1 is skipped.
 //
-// From the CI environment: GITHUB_SERVER_URL (or GITEA_URL), GITHUB_REPOSITORY,
-// GMOD_TOKEN, GMOD_SHA (the commit that landed), and GMOD_FORGE_TOKEN: the
-// forge starts no checks for what CI's own token pushes, so the update is
-// made with a person's token when the repository keeps one. Gitea only.
+// From the CI environment: GITHUB_REPOSITORY, GMOD_TOKEN, GMOD_SHA (the
+// commit that landed), the forge's address (GITHUB_API_URL on GitHub;
+// GITHUB_SERVER_URL or GITEA_URL on Gitea), and GMOD_FORGE_TOKEN: the forge
+// starts no checks for what CI's own token pushes, so the update is made
+// with a person's token when the repository keeps one. Without one, on
+// GitHub, a repository_dispatch ("gmod", {check: <number>}) starts them:
+// that is the one event CI's own token may start a run with.
 import * as core from '../lib/core.mjs';
 
-const server = (process.env.GITEA_URL || process.env.GITHUB_SERVER_URL || '').replace(/\/$/, '');
 const repo = process.env.GITHUB_REPOSITORY;
 const token = process.env.GMOD_TOKEN;
 const sha = process.env.GMOD_SHA;
-if (!server || !repo || !token || !sha) {
+// GitHub, or Gitea (whose Actions also set GITHUB_API_URL, under /api/v1).
+const github = process.env.GMOD_FORGE ? process.env.GMOD_FORGE === 'github' : !!process.env.GITHUB_API_URL && !/\/api\/v1\/?$/.test(process.env.GITHUB_API_URL) && !process.env.GITEA_URL;
+const server = (process.env.GITEA_URL || process.env.GITHUB_SERVER_URL || '').replace(/\/$/, '');
+const api = github ? `${(process.env.GITHUB_API_URL || 'https://api.github.com').replace(/\/$/, '')}/repos/${repo}` : `${server}/api/v1/repos/${repo}`;
+if ((!github && !server) || !repo || !token || !sha) {
   console.log('after-merge: not in CI on a push with a token; skipped');
   process.exit(0);
 }
-if (process.env.GITHUB_API_URL?.includes('api.github.com')) {
-  console.log('after-merge: GitHub is not handled yet; skipped');
-  process.exit(0);
-}
-const api = `${server}/api/v1/repos/${repo}`;
-const headers = { authorization: `token ${token}`, 'content-type': 'application/json', accept: 'application/json' };
+const scheme = github ? 'Bearer' : 'token';
+const headers = { 'content-type': 'application/json', accept: github ? 'application/vnd.github+json' : 'application/json' };
 const updater = process.env.GMOD_FORGE_TOKEN || '';
+// The check names a pull request's statuses carry.
+const context = need => (github ? `gmod / ${need}` : `gmod / ${need} (pull_request)`);
+const stateOf = x => x.status ?? x.state;
 async function call(method, path, body, as = token) {
-  const res = await fetch(`${api}${path}`, { method, headers: { ...headers, authorization: `token ${as}` }, body: body ? JSON.stringify(body) : undefined });
+  const res = await fetch(`${api}${path}`, { method, headers: { ...headers, authorization: `${scheme} ${as}` }, body: body ? JSON.stringify(body) : undefined });
   const text = await res.text();
   let json = null;
   try {
@@ -63,8 +68,9 @@ if (scheduled) {
 } else if (!spec) {
   console.log('after-merge: no .gmod/protect.json before this landed; nothing to hold it to');
 } else {
-  const closed = await call('GET', '/pulls?state=closed&sort=recentupdate&limit=50');
-  const pr = (closed.ok ? closed.json ?? [] : []).find(p => p.merged && p.merge_commit_sha === sha);
+  // The pull request that landed this commit, if one did.
+  const found = github ? await call('GET', `/commits/${sha}/pulls`) : await call('GET', '/pulls?state=closed&sort=recentupdate&limit=50');
+  const pr = (found.ok ? found.json ?? [] : []).find(p => (github ? p.merged_at : p.merged) && p.merge_commit_sha === sha);
   const breaches = [];
   if (!pr) {
     breaches.push(`${sha.slice(0, 10)} reached ${main} without a pull request`);
@@ -72,9 +78,9 @@ if (scheduled) {
     const st = await call('GET', `/commits/${pr.head.sha}/status`);
     const latest = new Map();
     // Newest first from the API: keep each context's newest state.
-    for (const x of st.ok ? st.json?.statuses ?? [] : []) if (!latest.has(x.context)) latest.set(x.context, x.status);
+    for (const x of st.ok ? st.json?.statuses ?? [] : []) if (!latest.has(x.context)) latest.set(x.context, stateOf(x));
     for (const need of spec.require) {
-      const state = latest.get(`gmod / ${need} (pull_request)`) ?? 'missing';
+      const state = latest.get(context(need)) ?? 'missing';
       if (state !== 'success') breaches.push(`#${pr.number} merged with its ${need} ${state === 'missing' ? 'never reported' : state}`);
     }
   }
@@ -96,14 +102,29 @@ if (scheduled) {
 }
 
 // ---- 2. bring the open jobs up to date ----
-const open = await call('GET', '/pulls?state=open&limit=50');
+const open = await call('GET', github ? '/pulls?state=open&per_page=50' : '/pulls?state=open&limit=50');
 const jobPrs = (open.ok ? open.json ?? [] : []).filter(pr => (pr.head?.ref ?? '').startsWith('gmod/') && pr.head?.repo?.full_name === repo);
 for (const pr of jobPrs) {
   const ref = pr.head.ref;
-  const behind = !core.git(['merge-base', '--is-ancestor', sha, pr.head.sha], { cwd: root, allow: true }).ok;
+  const behind = github
+    ? ((await call('GET', `/compare/${encodeURIComponent(main)}...${pr.head.sha}`)).json?.behind_by ?? 0) > 0
+    : !core.git(['merge-base', '--is-ancestor', sha, pr.head.sha], { cwd: root, allow: true }).ok;
   if (!behind) continue;
-  const r = await call('POST', `/pulls/${pr.number}/update?style=merge`, null, updater || token);
-  console.log(r.ok ? `after-merge: #${pr.number} (${ref}) takes ${main} in${updater ? '' : " (with CI's own token: its checks won't start again until it gets a new commit; set the GMOD_FORGE_TOKEN secret)"}` : `after-merge: #${pr.number} (${ref}) couldn't take ${main} in (${r.status}): ${JSON.stringify(r.json)}`);
+  const r = github
+    ? await call('PUT', `/pulls/${pr.number}/update-branch`, { expected_head_sha: pr.head.sha }, updater || token)
+    : await call('POST', `/pulls/${pr.number}/update?style=merge`, null, updater || token);
+  if (!r.ok) {
+    console.log(`after-merge: #${pr.number} (${ref}) couldn't take ${main} in (${r.status}): ${JSON.stringify(r.json)}`);
+    continue;
+  }
+  if (updater) {
+    console.log(`after-merge: #${pr.number} (${ref}) takes ${main} in; its checks run again`);
+  } else if (github) {
+    const d = await call('POST', '/dispatches', { event_type: 'gmod', client_payload: { check: pr.number } });
+    console.log(`after-merge: #${pr.number} (${ref}) takes ${main} in; ${d.ok ? 'its checks are started again' : `its checks couldn't be started again (${d.status})`}`);
+  } else {
+    console.log(`after-merge: #${pr.number} (${ref}) takes ${main} in (with CI's own token: its checks won't start again until it gets a new commit; set the GMOD_FORGE_TOKEN secret)`);
+  }
 }
 // ---- 3. what isn't landing ----
 const STUCK_HOURS = Number(process.env.GMOD_STUCK_HOURS || 2);
@@ -119,11 +140,11 @@ for (const pr of jobPrs) {
   const st = await call('GET', `/commits/${pr.head.sha}/status`);
   const statuses = st.ok ? st.json?.statuses ?? [] : [];
   const latest = new Map();
-  for (const x of statuses) if (!latest.has(x.context)) latest.set(x.context, x.status);
+  for (const x of statuses) if (!latest.has(x.context)) latest.set(x.context, stateOf(x));
   // Quiet since the last thing that happened to it: a push, an update, a check.
   const quiet = Math.min(...[pr.updated_at, ...statuses.map(x => x.updated_at)].map(hoursSince).filter(h => h >= 0));
   if (!(quiet >= STUCK_HOURS && quiet !== Infinity)) continue;
-  const state = need => latest.get(`gmod / ${need} (pull_request)`) ?? 'missing';
+  const state = need => latest.get(context(need)) ?? 'missing';
   const failedNeed = required.find(n => ['failure', 'error'].includes(state(n)));
   if (failedNeed) stuck.set(job, `#${pr.number}'s ${failedNeed} failed, and nothing has changed in ${ago(quiet)}. Its report says why: the job needs fixing (or, for a review that couldn't answer, running again).`);
   else if (required.some(n => state(n) !== 'success')) stuck.set(job, `#${pr.number}'s checks haven't finished in ${ago(quiet)} (${required.map(n => `${n} ${state(n)}`).join(', ')}). Is the runner up?`);
@@ -137,8 +158,9 @@ for (const [job, c] of Object.entries(core.claims(root))) {
   const h = hoursSince(c.at);
   if (h >= CLAIM_HOURS) stuck.set(job, `claimed by ${c.by ?? 'someone'} ${ago(h)} ago, and no pull request yet. Finish it, or \`gmod release\` it so another agent can.`);
 }
-const issues = await call('GET', '/issues?state=open&type=issues&limit=50');
-const filed = new Map((issues.ok ? issues.json ?? [] : []).filter(i => i.title?.startsWith('gmod stuck: ')).map(i => [i.title.slice('gmod stuck: '.length), i.number]));
+const issues = await call('GET', github ? '/issues?state=open&per_page=100' : '/issues?state=open&type=issues&limit=50');
+// GitHub lists pull requests among issues: not those.
+const filed = new Map((issues.ok ? issues.json ?? [] : []).filter(i => !i.pull_request && i.title?.startsWith('gmod stuck: ')).map(i => [i.title.slice('gmod stuck: '.length), i.number]));
 for (const [job, why] of stuck) {
   if (filed.has(job)) {
     console.log(`after-merge: ${job} is still stuck (#${filed.get(job)})`);
