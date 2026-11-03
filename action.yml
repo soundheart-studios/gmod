@@ -1,0 +1,55 @@
+name: gmod
+description: Planned work with proof. Gates and reviews every pull request, lands it on green, and watches main.
+author: Soundheart Studios
+branding: { icon: check-circle, color: green }
+
+inputs:
+  reviewer-url:
+    description: An OpenAI-compatible API for the AI review (DeepSeek, OpenRouter, your own). Leave empty for Claude.
+    default: ''
+  reviewer-model:
+    description: The reviewer's model, e.g. deepseek-flash.
+    default: ''
+  reviewer-key:
+    description: The reviewer's key. With no reviewer-url, it is an Anthropic API key.
+    default: ''
+  blocking:
+    description: A failed review stops the merge ("true"), or only comments ("false").
+    default: 'true'
+  setup:
+    description: A command that installs the project's dependencies before checks run, e.g. "npm ci".
+    default: ''
+  github-token:
+    description: The token gmod comments, reports checks and merges with.
+    default: ${{ github.token }}
+  forge-token:
+    description: A person's token, for what CI's own token can't do (reading branch protection, updating branches so checks run again).
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with: { fetch-depth: 0 }
+    - uses: actions/setup-node@v4
+      with: { node-version: 22 }
+    - name: gmod's own dependencies (only Claude as the reviewer needs them)
+      if: inputs.reviewer-url == '' && inputs.reviewer-key != ''
+      shell: bash
+      run: npm ci --prefix "$GITHUB_ACTION_PATH" --omit=dev --no-audit --no-fund
+    - name: The project's dependencies
+      if: inputs.setup != ''
+      shell: bash
+      run: ${{ inputs.setup }}
+    - name: gmod
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/ci/action.mjs"
+      env:
+        GMOD_HOME: ${{ github.action_path }}
+        GMOD_GITHUB_TOKEN: ${{ inputs.github-token }}
+        GMOD_FORGE_TOKEN: ${{ inputs.forge-token }}
+        GMOD_REVIEW_URL: ${{ inputs.reviewer-url }}
+        GMOD_REVIEW_MODEL: ${{ inputs.reviewer-model }}
+        GMOD_REVIEW_KEY: ${{ inputs.reviewer-url != '' && inputs.reviewer-key || '' }}
+        ANTHROPIC_API_KEY: ${{ inputs.reviewer-url == '' && inputs.reviewer-key || '' }}
+        GMOD_REVIEW_MODE: ${{ inputs.blocking == 'false' && 'comment' || '' }}
