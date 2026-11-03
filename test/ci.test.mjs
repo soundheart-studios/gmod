@@ -522,3 +522,37 @@ test('after a merge on GitHub: the tripwire, catch-up that starts its own checks
     assert.ok(opened.includes('gmod stuck: failing'), 'a pull request listed among issues is not a stuck issue already filed');
   } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('GitHub: main is held to .gmod/protect.json through its ruleset, or by the tripwire on a free private repository', async () => {
+  let reply = { status: 200, body: [] };
+  const server = createServer((req, res) => {
+    res.writeHead(reply.status, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(reply.body));
+  });
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  const before = process.env.GITHUB_API_URL;
+  process.env.GITHUB_API_URL = `http://127.0.0.1:${server.address().port}`;
+  const forge = { kind: 'github', owner: 'acme', repo: 'app' };
+  const spec = { require: ['gate', 'review'], up_to_date: true };
+  const check = () => protectionMatches('/nowhere', { spec, token: 't', forge });
+  try {
+    const { githubRuleset } = await import('../lib/ci.mjs');
+    // The ruleset gmod ci protect makes, as the rules API reports it.
+    reply = { status: 200, body: githubRuleset({ main: 'main', requireReview: true }).rules };
+    let f = await check();
+    assert.equal(f.ok, true, f.msg);
+    reply = { status: 200, body: [{ type: 'required_status_checks', parameters: { strict_required_status_checks_policy: false, required_status_checks: [{ context: 'gmod / gate' }] } }] };
+    f = await check();
+    assert.equal(f.ok, false);
+    assert.match(f.msg, /the review isn't required by its exact name, branches needn't be up to date, direct pushes are allowed, force pushes are allowed/);
+    reply = { status: 403, body: { message: 'Upgrade to GitHub Pro or make this repository public to enable this feature.' } };
+    f = await check();
+    assert.equal(f.ok, true, 'a plan without protection is not a reason to refuse every pull request');
+    assert.match(f.msg, /the after-merge tripwire holds it/);
+    reply = { status: 500, body: { message: 'oops' } };
+    assert.equal((await check()).ok, false, 'an unreadable answer is not a pass');
+  } finally {
+    if (before === undefined) delete process.env.GITHUB_API_URL; else process.env.GITHUB_API_URL = before;
+    server.close();
+  }
+});

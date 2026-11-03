@@ -86,7 +86,8 @@ async function checkAndLand(pr) {
   const common = ['--base', pr.base.sha, '--head', 'HEAD', '--branch', pr.head.ref, '--title', pr.title];
 
   await status(sha, 'gmod / gate', 'pending', 'proving the change');
-  const gate = run('bin/gmod.mjs', ['verify', ...common, '--report', 'gate.md'], { GMOD_TOKEN: process.env.GMOD_FORGE_TOKEN || '' });
+  // Reading main's rules needs only read access: CI's own token does.
+  const gate = run('bin/gmod.mjs', ['verify', ...common, '--report', 'gate.md'], { GMOD_TOKEN: process.env.GMOD_FORGE_TOKEN || token });
   await status(sha, 'gmod / gate', gate === 0 ? 'success' : 'failure', gate === 0 ? 'proven' : 'not proven: see the gate comment');
   comment(pr.number, 'gmod-gate', 'gate.md');
   if (gate !== 0) return 1;
