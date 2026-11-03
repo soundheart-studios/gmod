@@ -25,6 +25,9 @@ const ADVICE_ONLY = process.env.GMOD_REVIEW_MODE === 'comment';
 const EFFORT = process.env.GMOD_REVIEW_EFFORT || 'medium';
 const DIFF_LIMIT = 600_000;
 const ADR_LIMIT = 200_000;
+// How a local reviewer is asked for JSON: 'schema', or 'object' once it turns
+// out to take only plain JSON mode.
+let jsonMode = 'schema';
 // Data (recorded fixtures, lockfiles, snapshots) is shown as a sample: its
 // meaning is in the code and tests that read it, and in full it overflows a
 // local model's context. Any other file's diff is cut at FILE_LIMIT.
@@ -131,19 +134,29 @@ await reviewJob();
 // Claude, through the SDK; a local model, through its OpenAI-compatible API.
 async function ask(system, schema, input) {
   if (LOCAL) {
-    const res = await fetch(`${LOCAL}/chat/completions`, {
+    // A JSON schema where the API takes one; plain JSON mode, with the schema
+    // in the instructions, where it doesn't (DeepSeek, among others).
+    const call = format => fetch(`${LOCAL}/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(process.env.GMOD_REVIEW_KEY ? { authorization: `Bearer ${process.env.GMOD_REVIEW_KEY}` } : {}) },
       body: JSON.stringify({
         ...(MODEL ? { model: MODEL } : {}),
         max_tokens: 8000,
-        response_format: { type: 'json_schema', json_schema: { name: 'review', strict: true, schema } },
+        response_format: format === 'schema' ? { type: 'json_schema', json_schema: { name: 'review', strict: true, schema } } : { type: 'json_object' },
         messages: [
-          { role: 'system', content: system },
+          { role: 'system', content: format === 'schema' ? system : `${system}\n\nAnswer with one JSON object, and nothing else, matching this JSON schema:\n${JSON.stringify(schema)}` },
           { role: 'user', content: input },
         ],
       }),
     });
+    let res = await call(jsonMode);
+    if (!res.ok && res.status === 400 && jsonMode === 'schema') {
+      const why = await res.clone().text().catch(() => '');
+      if (/response_format|json_schema/i.test(why)) {
+        jsonMode = 'object';
+        res = await call(jsonMode);
+      }
+    }
     if (!res.ok) {
       const why = (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 300);
       unanswered(`### gmod review: the reviewer at ${LOCAL} answered ${res.status}${why ? `: ${why}` : ''}; run it again, or make the change smaller (input was ${input.length} characters)`);

@@ -33,7 +33,7 @@ async function model(reply) {
       const b = JSON.parse(body || '{}');
       asked.push(b);
       const r = reply(b);
-      if (r.status) { res.writeHead(r.status); return res.end('{}'); }
+      if (r.status) { res.writeHead(r.status); return res.end(r.body ?? '{}'); }
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ model: 'stand-in', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(r) } }] }));
     });
@@ -98,6 +98,28 @@ test('a governance change is asked whether it weakens what is checked', async ()
     const over = await review(r0.dir, { GMOD_REVIEW_URL: m.url, GMOD_REVIEW_OVERRIDE: '1' }, '--branch', 'gmod/ci-tweak');
     assert.equal(over.code, 0, over.out);
     assert.match(over.out, /Overridden by a maintainer/);
+  } finally { m.close(); r0.done(); }
+});
+
+test('a reviewer API without JSON schemas is asked in plain JSON mode', async () => {
+  const r0 = repo();
+  const pass = { verdict: 'pass', evidence: 'src/sum.mjs:1' };
+  const answer = { summary: 'Adds sum.', criteria: [{ criterion: 'adds', ...pass }], tests_are_real: pass, stays_within_goal: pass, adrs: [], overall: 'pass' };
+  // Like DeepSeek: json_schema is refused, json_object is fine.
+  const m = await model(b => (b.response_format.type === 'json_schema'
+    ? { status: 400, body: '{"error":{"message":"This response_format type is unavailable now"}}' }
+    : answer));
+  try {
+    r0.g('switch', '-q', '-c', 'gmod/add-sum');
+    mkdirSync(join(r0.dir, 'src'));
+    writeFileSync(join(r0.dir, 'src', 'sum.mjs'), 'export const sum = (a, b) => a + b;\n');
+    r0.g('add', '-A'); r0.g('commit', '-q', '-m', 'add-sum: adds');
+    const r = await review(r0.dir, { GMOD_REVIEW_URL: m.url, GMOD_REVIEW_MODEL: 'deepseek-flash' }, '--branch', 'gmod/add-sum');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /### gmod review: pass/);
+    assert.deepEqual(m.asked.map(b => b.response_format.type), ['json_schema', 'json_object']);
+    assert.match(m.asked[1].messages[0].content, /matching this JSON schema/);
+    assert.equal(m.asked[1].model, 'deepseek-flash');
   } finally { m.close(); r0.done(); }
 });
 
