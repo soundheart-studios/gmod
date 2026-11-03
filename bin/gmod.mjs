@@ -376,7 +376,7 @@ async function runCi(root, sub, flags) {
   }
   if (sub === 'protect') {
     const r = await ci.ciProtect(root, { url: flags.url, token, main, codeOwners: !!flags['code-owners'], requireReview: flags['require-review'] ? true : undefined });
-    return out(flags, r, `${main} on ${r.forge.owner}/${r.forge.repo}: the gate required, branches must be up to date, no direct pushes`);
+    return out(flags, r, `${main} on ${r.forge.owner}/${r.forge.repo}: ${r.required.join(' and ')} required, branches must be up to date, no direct pushes`);
   }
   if (sub === 'check') {
     const r = await ci.ciCheck(root, { url: flags.url, token, main });
