@@ -1,0 +1,18 @@
+# gmod's own tests, on every push and pull request. The mod's tests
+# (test/*.ts, test/*.tsx) need Claude Code's test engine and run locally.
+name: test
+on:
+  push:
+    branches: [main, next]
+  pull_request:
+jobs:
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci --no-audit --no-fund
+      - name: git identity for the tests' throwaway repositories
+        run: git config --global user.name gmod-ci && git config --global user.email gmod-ci@example.invalid && git config --global init.defaultBranch main
+      - run: npm test
