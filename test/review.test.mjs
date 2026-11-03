@@ -118,6 +118,7 @@ test('a reviewer API without JSON schemas is asked in plain JSON mode', async ()
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /### gmod review: pass/);
     assert.deepEqual(m.asked.map(b => b.response_format.type), ['json_schema', 'json_object']);
+    assert.match(r.out, /A fail stops the merge/, 'a blocking review says it blocks');
     assert.match(m.asked[1].messages[0].content, /matching this JSON schema/);
     assert.equal(m.asked[1].model, 'deepseek-flash');
   } finally { m.close(); r0.done(); }

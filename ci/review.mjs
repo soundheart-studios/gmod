@@ -292,7 +292,7 @@ const lines = [
   '',
   ADVICE_ONLY
     ? `<sub>AI review by ${answer.model}: advice only. The gate decides.</sub>`
-    : `<sub>AI review by ${answer.model}. It advises; the gate decides. A maintainer can override a fail with the \`gmod-override\` label.</sub>`,
+    : `<sub>AI review by ${answer.model}. A fail stops the merge; a maintainer can overrule it with the \`gmod-override\` label.</sub>`,
 ];
 if (shortened.length) lines[lines.length - 1] += shortNote(shortened);
 const overridden = r.overall === 'fail' && process.env.GMOD_REVIEW_OVERRIDE === '1';
