@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { detectForge, openPr, protectionMatches, workflow } from '../lib/ci.mjs';
+import { detectForge, giteaToken, openPr, protectionMatches, setSecret, teaLogins, workflow } from '../lib/ci.mjs';
 
 const GMOD = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'gmod.mjs');
 
@@ -554,5 +554,65 @@ test('GitHub: main is held to .gmod/protect.json through its ruleset, or by the 
   } finally {
     if (before === undefined) delete process.env.GITHUB_API_URL; else process.env.GITHUB_API_URL = before;
     server.close();
+  }
+});
+
+test("a Gitea token comes from tea's login for that host when there is one", () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gmod-tea-'));
+  const config = join(dir, 'config.yml');
+  writeFileSync(config, [
+    'logins:',
+    '- name: work',
+    '  url: https://git.example.com',
+    '  token: work-token',
+    '  default: true',
+    '  user: me',
+    '- name: home',
+    "  url: 'http://ai.local:3000'",
+    '  token: "home-token"',
+    'preferences:',
+    '  editor: false',
+  ].join('\n'));
+  try {
+    assert.deepEqual(teaLogins(readFileSync(config, 'utf8')).map(l => [l.name, l.token, l.default]), [['work', 'work-token', true], ['home', 'home-token', false]]);
+    const none = join(dir, 'missing');
+    assert.equal(giteaToken({ env: {}, teaConfigs: [config], fallback: none, web: 'http://ai.local:3000' }), 'home-token', 'the login for that host');
+    assert.equal(giteaToken({ env: {}, teaConfigs: [config], fallback: none }), 'work-token', 'no host known: the default login');
+    assert.equal(giteaToken({ env: { GITEA_TOKEN: 'env' }, teaConfigs: [config], fallback: none, web: 'http://ai.local:3000' }), 'env', 'GITEA_TOKEN still wins');
+    const own = join(dir, 'gitea-token');
+    writeFileSync(own, 'file-token\n');
+    assert.equal(giteaToken({ env: {}, teaConfigs: [none], fallback: own }), 'file-token', "gmod's own file, when tea has nothing");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a CI secret goes through gh on GitHub and the API on Gitea, never a command line', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'gmod-secret-'));
+  const log = join(dir, 'gh.log');
+  const fake = join(dir, 'gh');
+  writeFileSync(fake, `#!/bin/sh\necho "args: $@" >> '${log}'\necho "stdin: $(cat)" >> '${log}'\n`, { mode: 0o755 });
+  const before = process.env.GMOD_GH;
+  process.env.GMOD_GH = fake;
+  const seen = [];
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', c => (body += c));
+    req.on('end', () => { seen.push({ method: req.method, url: req.url, body: JSON.parse(body || '{}') }); res.writeHead(201); res.end('{}'); });
+  });
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  try {
+    await setSecret('/nowhere', { name: 'GMOD_REVIEW_KEY', value: 'sk-value', forge: { kind: 'github', owner: 'acme', repo: 'app' } });
+    const calls = readFileSync(log, 'utf8');
+    assert.match(calls, /args: secret set GMOD_REVIEW_KEY --repo acme\/app/);
+    assert.match(calls, /stdin: sk-value/);
+    assert.ok(!/args: .*sk-value/.test(calls), 'the value is never an argument');
+    const web = `http://127.0.0.1:${server.address().port}`;
+    await setSecret('/nowhere', { name: 'GMOD_REVIEW_KEY', value: 'sk-value', token: 't', forge: { kind: 'gitea', owner: 'acme', repo: 'app', web, api: `${web}/api/v1` } });
+    assert.deepEqual(seen.map(x => [x.method, x.url, x.body.data]), [['PUT', '/api/v1/repos/acme/app/actions/secrets/GMOD_REVIEW_KEY', 'sk-value']]);
+    await assert.rejects(setSecret('/nowhere', { name: 'bad name', value: 'x', forge: { kind: 'github' } }), /letters, digits and _/);
+    await assert.rejects(setSecret('/nowhere', { name: 'OK', value: '', forge: { kind: 'github' } }), /pipe it in/);
+  } finally {
+    if (before === undefined) delete process.env.GMOD_GH; else process.env.GMOD_GH = before;
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });

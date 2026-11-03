@@ -74,6 +74,7 @@ const HELP = `gmod: planned work with proof, on plain git
                                   on the forge's machine: refuse moving claims, and letting go of
                                   someone else's (Gitea's pre-receive.d)
   gmod receive                    the hook itself: reads pushed refs on stdin
+  gmod ci secret <NAME> [--from-file <f>]  set a CI secret (the value piped in, or from a file)
   gmod ci forge-token [--token-file <f>] [--url <u>]
                                   keep your token as the repository's GMOD_FORGE_TOKEN secret: the
                                   gate reads main's protection with it, and job branches CI brings
@@ -98,6 +99,11 @@ function parse(argv) {
     else flags[a.slice(2)] = argv[++i];
   }
   return { cmd: rest[0], args: rest.slice(1), flags };
+}
+
+// The forge's web address, to pick the matching tea login; none when unknown.
+function webOf(root, url) {
+  try { return ci.detectForge(root, { url }).web ?? undefined; } catch { return undefined; }
 }
 
 function json(text, what) {
@@ -143,7 +149,7 @@ async function main() {
     return r.ok ? 0 : 1;
   }
   const root = core.repoRoot();
-  if (cmd === 'ci') return runCi(root, args[0], flags);
+  if (cmd === 'ci') return runCi(root, args[0], flags, args.slice(1));
   if (cmd === 'commit') {
     const r = core.commitJob(root, { message: flags.message ?? args.filter(x => x !== '-m').join(' '), trailers: flags.trailer ?? [] });
     const lines = [`committed ${r.commit.slice(0, 10)} on ${r.branch}: ${r.subject}`];
@@ -153,12 +159,12 @@ async function main() {
     if (flags['no-pr']) return out(flags, r, lines.join('\n'));
     const plan = core.planFromDisk(root);
     const j = plan.jobs.find(x => x.id === r.job);
-    const pr = await ci.openPr(root, { url: flags.url, token: ci.giteaToken({ file: flags['token-file'] }), main: plan.main ?? 'main', job: r.job, goal: j?.goal, brief: j?.brief, branch: r.branch, auto: true });
+    const pr = await ci.openPr(root, { url: flags.url, token: ci.giteaToken({ file: flags['token-file'], web: webOf(root, flags.url) }), main: plan.main ?? 'main', job: r.job, goal: j?.goal, brief: j?.brief, branch: r.branch, auto: true });
     lines.push(`${pr.existed ? 'already open' : 'opened'}: ${pr.url}`, 'lands by itself once its checks pass (gmod pr --status says how they went)');
     return out(flags, { ...r, pr }, lines.join('\n'));
   }
   if (cmd === 'pr' && flags.status) {
-    const r = await ci.prStatus(root, { url: flags.url, token: ci.giteaToken({ file: flags['token-file'] }), branch: flags.branch });
+    const r = await ci.prStatus(root, { url: flags.url, token: ci.giteaToken({ file: flags['token-file'], web: webOf(root, flags.url) }), branch: flags.branch });
     const lines = [`#${r.number} ${r.state}: ${r.url}`, ...r.checks.map(c => `${{ success: '✅', failure: '❌', error: '❌', pending: '⏳', skipped: '➖' }[c.state] ?? '·'} ${c.context}: ${c.state}`)];
     if (r.reports) lines.push('', ...r.reports);
     else lines.push(`(${r.note})`);
@@ -168,7 +174,7 @@ async function main() {
     const plan = core.planFromDisk(root);
     const id = flags.job ?? core.current(root)?.job;
     const j = id && plan?.jobs.find(x => x.id === id);
-    const r = await ci.openPr(root, { url: flags.url, token: ci.giteaToken({ file: flags['token-file'] }), main: plan?.main ?? 'main', job: id, goal: j?.goal, brief: j?.brief, branch: flags.branch, auto: !!flags.auto });
+    const r = await ci.openPr(root, { url: flags.url, token: ci.giteaToken({ file: flags['token-file'], web: webOf(root, flags.url) }), main: plan?.main ?? 'main', job: id, goal: j?.goal, brief: j?.brief, branch: flags.branch, auto: !!flags.auto });
     return out(flags, r, `${r.existed ? 'already open' : 'opened'}: ${r.url}\n${r.title}${r.auto ? '\nmerges by itself once its checks pass' : ''}`);
   }
   if (cmd === 'adr') return runAdr(root, args[0], args.slice(1), flags);
@@ -295,7 +301,7 @@ async function main() {
       if (r.mode !== 'ungoverned' && r.mode !== 'empty') {
         const mb = core.git(['merge-base', flags.base, flags.head ?? 'HEAD'], { cwd: root });
         const spec = core.protectSpec(root, mb);
-        const f = await ci.protectionMatches(root, { spec, url: flags.url, token: process.env.GMOD_TOKEN || ci.giteaToken({ file: flags['token-file'] }), main: core.planAt(root, mb)?.main ?? 'main' }).catch(e => ({ ok: false, msg: `couldn't compare main's protection: ${e.message}` }));
+        const f = await ci.protectionMatches(root, { spec, url: flags.url, token: process.env.GMOD_TOKEN || ci.giteaToken({ file: flags['token-file'], web: webOf(root, flags.url) }), main: core.planAt(root, mb)?.main ?? 'main' }).catch(e => ({ ok: false, msg: `couldn't compare main's protection: ${e.message}` }));
         if (f) {
           r.findings.push(f);
           r.ok = r.ok && f.ok;
@@ -351,8 +357,8 @@ function runAdr(root, sub, rest, flags) {
   throw new core.GmodError('gmod adr propose | drafts | accept | reject | list | for');
 }
 
-async function runCi(root, sub, flags) {
-  const token = ci.giteaToken({ file: flags['token-file'] });
+async function runCi(root, sub, flags, rest = []) {
+  const token = ci.giteaToken({ file: flags['token-file'], web: webOf(root, flags.url) });
   const main = flags.main ?? core.planFromDisk(root)?.main ?? 'main';
   if (sub === 'init') {
     const [repo, ref] = (flags['gmod-repo'] ?? '').split('@');
@@ -387,7 +393,16 @@ async function runCi(root, sub, flags) {
     const r = await ci.ciForgeToken(root, { url: flags.url, token });
     return out(flags, r, `GMOD_FORGE_TOKEN set on ${r.forge.owner}/${r.forge.repo}: the gate reads main's protection with it, and job branches CI brings up to date are checked again${r.updated.length ? `\nbrought up to date, checked again: ${r.updated.map(n => `#${n}`).join(', ')}` : ''}`);
   }
-  throw new core.GmodError('gmod ci init | protect | check | forge-token');
+  if (sub === 'secret') {
+    // From a file, or piped in; never typed on the command line.
+    const { readFileSync, fstatSync } = await import('node:fs');
+    let value = '';
+    if (flags['from-file']) value = readFileSync(flags['from-file'], 'utf8');
+    else if (!process.stdin.isTTY && !fstatSync(0).isCharacterDevice()) value = readFileSync(0, 'utf8');
+    const r = await ci.setSecret(root, { name: rest[0], value: value.replace(/\r?\n$/, ''), url: flags.url, token });
+    return out(flags, { name: r.name, repo: `${r.forge.owner}/${r.forge.repo}` }, `${r.name} set on ${r.forge.owner}/${r.forge.repo}`);
+  }
+  throw new core.GmodError('gmod ci init | protect | check | forge-token | secret');
 }
 
 try {
