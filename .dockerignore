@@ -3,5 +3,3 @@ node_modules
 test
 docs
 .github
-*.md
-!README.md
