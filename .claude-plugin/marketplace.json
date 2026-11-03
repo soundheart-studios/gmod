@@ -1,0 +1,12 @@
+{
+  "name": "gmod",
+  "description": "gmod: you say yes twice, agents ship the rest.",
+  "owner": { "name": "Soundheart Studios" },
+  "plugins": [
+    {
+      "name": "gmod",
+      "source": "./",
+      "description": "Planned work with proof: plan with Claude, agents build and prove each job, CI lands it."
+    }
+  ]
+}
