@@ -5,6 +5,7 @@ import * as core from '../lib/core.mjs';
 import * as ci from '../lib/ci.mjs';
 import * as adr from '../lib/adr.mjs';
 import * as rcv from '../lib/receive.mjs';
+import * as setupLib from '../lib/setup.mjs';
 import { readFileSync as readSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -74,6 +75,10 @@ const HELP = `gmod: planned work with proof, on plain git
                                   on the forge's machine: refuse moving claims, and letting go of
                                   someone else's (Gitea's pre-receive.d)
   gmod receive                    the hook itself: reads pushed refs on stdin
+  gmod setup [--reviewer-url <u> --reviewer-model <m> | --reviewer none] [--advice] [--setup '<cmd>'] [--ref <vX>] [--no-wait]
+                                  set up CI on GitHub: the gmod action, main's rules, .gmod/protect.json; proven by landing them
+  gmod doctor                     is everything in place? each ✗ with its fix
+  gmod ci upgrade [--to <vX>] [--candidates]   a pull request moving the gmod action to its newest release
   gmod ci secret <NAME> [--from-file <f>]  set a CI secret (the value piped in, or from a file)
   gmod ci forge-token [--token-file <f>] [--url <u>]
                                   keep your token as the repository's GMOD_FORGE_TOKEN secret: the
@@ -94,7 +99,7 @@ function parse(argv) {
     const a = argv[i];
     if (!a.startsWith('--')) rest.push(a);
     else if (a === '--version') rest.unshift('version');
-    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr'].includes(a)) flags[a.slice(2)] = true;
+    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr', '--advice', '--no-wait', '--candidates'].includes(a)) flags[a.slice(2)] = true;
     else if (a === '--trailer') (flags.trailer ??= []).push(argv[++i]);
     else flags[a.slice(2)] = argv[++i];
   }
@@ -149,6 +154,21 @@ async function main() {
     return r.ok ? 0 : 1;
   }
   const root = core.repoRoot();
+  if (cmd === 'setup') {
+    const reviewer = flags.reviewer === 'none' ? { kind: 'none' } : flags['reviewer-url'] ? { kind: 'openai', url: flags['reviewer-url'], model: flags['reviewer-model'] } : { kind: 'claude' };
+    const r = await setupLib.setup(root, { url: flags.url, reviewer, blocking: !flags.advice, setup: flags.setup ?? '', ref: flags.ref, wait: !flags['no-wait'], log: s => !flags.json && console.log(`${s.ok ? '✓' : '✗'} ${s.msg}`) });
+    if (flags.json) out(flags, r, '');
+    return r.ok ? 0 : 1;
+  }
+  if (cmd === 'doctor') {
+    const r = await setupLib.doctor(root, { url: flags.url });
+    out(flags, r, r.findings.map(f => `${f.ok ? '✓' : '✗'} ${f.msg}${f.ok || !f.fix ? '' : `\n    fix: ${f.fix}`}`).join('\n'));
+    return r.ok ? 0 : 1;
+  }
+  if (cmd === 'ci' && args[0] === 'upgrade') {
+    const r = await setupLib.upgrade(root, { url: flags.url, to: flags.to, candidates: !!flags.candidates });
+    return out(flags, r, r.upToDate ? `already on gmod ${r.current}` : `gmod ${r.current} → ${r.to}: ${r.pr.url} (lands by itself once its checks pass)`);
+  }
   if (cmd === 'ci') return runCi(root, args[0], flags, args.slice(1));
   if (cmd === 'commit') {
     const r = core.commitJob(root, { message: flags.message ?? args.filter(x => x !== '-m').join(' '), trailers: flags.trailer ?? [] });
