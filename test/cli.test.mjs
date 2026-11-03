@@ -58,6 +58,17 @@ function world() {
 const TEST = "import { sum } from '../src/sum.mjs';\nif (sum(2, 3) !== 5) { console.error('sum(2,3) is', sum(2, 3)); process.exit(1); }\n";
 const CODE = 'export const sum = (a, b) => a + b;\n';
 
+test('version: the package version, and the image commit when there is one', () => {
+  const pkg = JSON.parse(readFileSync(join(dirname(GMOD), '..', 'package.json'), 'utf8'));
+  const dir = mkdtempSync(join(tmpdir(), 'gmod-version-'));
+  try {
+    assert.equal(gmod(dir, 'version').out, `gmod ${pkg.version}`);
+    assert.equal(gmod(dir, '--version').out, `gmod ${pkg.version}`, 'outside a repository too');
+    const r = spawnSync('node', [GMOD, 'version', '--json'], { cwd: dir, env: { ...ENV, GMOD_COMMIT: 'abc1234' }, encoding: 'utf8' });
+    assert.deepEqual(JSON.parse(r.stdout), { version: pkg.version, commit: 'abc1234' });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('next, claim and the race for a claim', () => {
   const w = world();
   try {

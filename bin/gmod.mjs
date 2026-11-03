@@ -44,6 +44,7 @@ const HELP = `gmod: planned work with proof, on plain git
                                   the work merged onto today's main
   gmod notice <path>              what the agent working at <path> should hear, once
   gmod sweep                      let go of claims on jobs done on main
+  gmod version                    which gmod this is (also --version)
 
   gmod adr propose '<draft json>'  draft a decision: {title, scope, context, decision, rules: [{level, text}], supersedes}
   gmod adr drafts                 the drafts waiting for a person
@@ -91,6 +92,7 @@ function parse(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith('--')) rest.push(a);
+    else if (a === '--version') rest.unshift('version');
     else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr'].includes(a)) flags[a.slice(2)] = true;
     else if (a === '--trailer') (flags.trailer ??= []).push(argv[++i]);
     else flags[a.slice(2)] = argv[++i];
@@ -113,6 +115,12 @@ function out(flags, value, text) {
 async function main() {
   const { cmd, args, flags } = parse(process.argv.slice(2));
   if (!cmd || cmd === 'help' || flags.help) return void console.log(HELP);
+  // Which gmod this is: the package version, and the commit it was built
+  // from when it runs from an image (GMOD_COMMIT).
+  if (cmd === 'version') {
+    const { version } = JSON.parse(readSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
+    return out(flags, { version, commit: process.env.GMOD_COMMIT || null }, `gmod ${version}${process.env.GMOD_COMMIT ? ` (${process.env.GMOD_COMMIT})` : ''}`);
+  }
   // Server side: neither needs a work tree.
   if (cmd === 'receive') {
     const r = rcv.receive(readSync(0, 'utf8'));
