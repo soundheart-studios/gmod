@@ -258,6 +258,9 @@ test('the workflow compares against the pull request base, and checks what lande
   assert.match(y, /review\.mjs" --base "\$\{BASE_SHA:-origin\/\$BASE\}"/);
   assert.match(y, /ci\/after-merge\.mjs"\n {8}env:\n {10}GMOD_TOKEN: \$\{\{ github\.token \}\}\n {10}GMOD_FORGE_TOKEN: \$\{\{ secrets\.GMOD_FORGE_TOKEN \}\}\n {10}GMOD_SHA: \$\{\{ github\.sha \}\}/);
   assert.doesNotMatch(y, /GMOD_REVIEW_MODE/);
+  // Hourly, the sweep looks for what isn't landing.
+  assert.match(y, /\n {2}schedule:\n {4}- cron: '17 \* \* \* \*'\n/);
+  assert.match(y, /sweep:\n {4}if: github\.event_name == 'push' \|\| github\.event_name == 'schedule'/);
 });
 
 test("the workflow installs the project's own dependencies before the gate and the review", () => {
@@ -340,5 +343,71 @@ test('after a merge: a breach opens an issue, and behind job branches take main 
     assert.match(issue.body.title, /^gmod breach: #7 merged with its review failure$/);
     assert.match(r.out, /#8 \(gmod\/behind\) takes main in/);
     assert.equal(seen.filter(x => x.url.includes('/update')).length, 1, 'only the job branch that is behind');
+  } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('what is not landing gets a "gmod stuck" issue, closed once it is gone', async () => {
+  const dir = repo();
+  const g = (...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).trim();
+  g('config', 'user.email', 'a@x.io'); g('config', 'user.name', 'a');
+  mkdirSync(join(dir, '.gmod'));
+  writeFileSync(join(dir, '.gmod', 'plan.json'), JSON.stringify({ main: 'main', checks: {}, jobs: [] }));
+  writeFileSync(join(dir, '.gmod', 'protect.json'), JSON.stringify({ require: ['gate', 'review'] }));
+  g('add', '-A'); g('commit', '-q', '-m', 'governance');
+  const head = g('rev-parse', 'HEAD');
+  const hoursAgo = h => new Date(Date.now() - h * 3_600_000).toISOString();
+  // A claim taken long ago, with no pull request; and a fresh one.
+  for (const [job, h] of [['old-claim', 30], ['new-claim', 1]]) {
+    const obj = execFileSync('git', ['-C', dir, 'commit-tree', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', '-m', JSON.stringify({ job, by: 'agent@x', at: hoursAgo(h) })], { encoding: 'utf8' }).trim();
+    g('update-ref', `refs/gmod/claims/${job}`, obj);
+  }
+  const pr = (number, job, sha, h) => ({ number, updated_at: hoursAgo(h), head: { ref: `gmod/${job}`, sha, repo: { full_name: 'acme/demo' } } });
+  const statuses = {
+    failing: [{ context: 'gmod / review (pull_request)', status: 'failure', updated_at: hoursAgo(5) }, { context: 'gmod / gate (pull_request)', status: 'success', updated_at: hoursAgo(5) }],
+    fresh: [{ context: 'gmod / review (pull_request)', status: 'failure', updated_at: hoursAgo(0.2) }],
+    green: [{ context: 'gmod / review (pull_request)', status: 'success', updated_at: hoursAgo(3) }, { context: 'gmod / gate (pull_request)', status: 'success', updated_at: hoursAgo(3) }],
+    hung: [{ context: 'gmod / gate (pull_request)', status: 'pending', updated_at: hoursAgo(4) }],
+  };
+  const seen = [];
+  // Every pull request's head is the same commit here: statuses are answered
+  // in the order the pull requests were listed.
+  let asked = 0;
+  const order = ['failing', 'fresh', 'green', 'hung'];
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', c => (body += c));
+    req.on('end', () => {
+      seen.push({ method: req.method, url: req.url, body: body ? JSON.parse(body) : null });
+      const send = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
+      const base = '/api/v1/repos/acme/demo';
+      if (req.url.startsWith(`${base}/pulls?state=open`)) return send(200, [pr(20, 'failing', head, 5), pr(21, 'fresh', head, 0.2), pr(22, 'green', head, 3), pr(23, 'hung', head, 4)]);
+      if (/\/status$/.test(req.url)) return send(200, { statuses: statuses[order[asked++]] });
+      if (req.url.startsWith(`${base}/issues?state=open`)) return send(200, [{ number: 30, title: 'gmod stuck: landed-job' }, { number: 31, title: 'gmod stuck: failing' }, { number: 32, title: 'something else' }]);
+      if (req.url === `${base}/issues` && req.method === 'POST') return send(201, { number: 40 });
+      if (req.url.startsWith(`${base}/issues/`)) return send(201, {});
+      send(404, {});
+    });
+  });
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  try {
+    const r = await new Promise(ok => {
+      const p = spawn('node', [join(dirname(GMOD), '..', 'ci', 'after-merge.mjs')], { cwd: dir, env: { ...process.env, GITHUB_SERVER_URL: url, GITHUB_REPOSITORY: 'acme/demo', GMOD_TOKEN: 't', GMOD_SHA: head, GITHUB_API_URL: '', GITHUB_EVENT_NAME: 'schedule' } });
+      let out = '';
+      p.stdout.on('data', d => (out += d));
+      p.stderr.on('data', d => (out += d));
+      p.on('close', code => ok({ code, out }));
+    });
+    assert.equal(r.code, 0, r.out);
+    assert.ok(!seen.some(x => x.url.includes('/pulls?state=closed')), 'the hourly look checks no merge');
+    const opened = seen.filter(x => x.method === 'POST' && x.url.endsWith('/issues')).map(x => x.body);
+    assert.deepEqual(opened.map(i => i.title).sort(), ['gmod stuck: green', 'gmod stuck: hung', 'gmod stuck: old-claim']);
+    assert.match(opened.find(i => i.title.endsWith('green')).body, /#22 passed everything 3h ago but hasn't merged/);
+    assert.match(opened.find(i => i.title.endsWith('hung')).body, /#23's checks haven't finished in 4h \(gate pending, review missing\)\. Is the runner up\?/);
+    assert.match(opened.find(i => i.title.endsWith('old-claim')).body, /claimed by agent@x 30h ago, and no pull request yet/);
+    assert.match(r.out, /failing is still stuck \(#31\)/, 'filed once, not again every hour');
+    assert.ok(!r.out.includes('fresh'), 'a failure from minutes ago is still being worked on');
+    assert.ok(seen.some(x => x.method === 'PATCH' && x.url.endsWith('/issues/30') && x.body.state === 'closed'), 'a job no longer waiting has its issue closed');
+    assert.ok(!seen.some(x => x.url.endsWith('/issues/31') || x.url.endsWith('/issues/32')));
   } finally { server.close(); rmSync(dir, { recursive: true, force: true }); }
 });

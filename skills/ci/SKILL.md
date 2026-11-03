@@ -49,6 +49,8 @@ Then declare it, so nobody can quietly loosen it: `.gmod/protect.json` holds `{"
 
 Pull requests land on green by themselves: jobs through `mcp__gmod__commit` (or `gmod pr --auto`), and governance changes (plan, ADRs, CI, protect.json) through `gmod pr --auto`, which the review checks for anything that weakens what is checked. After each merge, CI brings every other open job branch up to date so its checks run again and it lands in turn.
 
+What doesn't land is reported, after each merge and hourly: a job whose pull request failed and has sat for 2 hours (`GMOD_STUCK_HOURS`), whose checks never finished, that passed but didn't merge, or that was claimed a day ago (`GMOD_CLAIM_HOURS`) with no pull request gets one issue, "gmod stuck: <job>", closed again once it lands or is let go.
+
 ```sh
 node <gmod>/bin/gmod.mjs ci check      # over ssh, once per host: git config --global gmod.<host>.url http://host:port
 ```
