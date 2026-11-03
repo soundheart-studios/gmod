@@ -24,16 +24,15 @@ flowchart LR
 ## A job's life, in plain words
 
 ```mermaid
-stateDiagram-v2
-    direction LR
-    [*] --> Ready: in the plan, nothing to wait for
-    Ready --> Claimed: an agent takes it
-    Claimed --> Red: it writes a test that fails
-    Red --> Green: it makes the test pass
-    Green --> Committed: it commits, and only then may it
-    Committed --> Pushed: a pull request opens
-    Pushed --> Merged: CI proves it, then it lands
-    Merged --> [*]
+flowchart TB
+    A["Ready<br/>it's in the plan, and nothing it waits for is left"]
+    B["Claimed<br/>one agent takes it; no other agent can"]
+    C["Failing<br/>the agent writes a test that fails"]
+    D["Passing<br/>it makes the test pass"]
+    E["Committed<br/>only now may it commit"]
+    F["Pull request<br/>CI proves it again, and an AI reviews it"]
+    G["Done<br/>it lands on main, and the jobs after it become ready"]
+    A --> B --> C --> D --> E --> F --> G
 ```
 
 The gmod pane in Claude Code shows each job as a row of dots, one per step, so you can see at a glance where everything stands:
