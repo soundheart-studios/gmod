@@ -126,6 +126,16 @@ async function checkAndLand(pr) {
   }
   const merged = await gh('PUT', `/pulls/${pr.number}/merge`, { merge_method: 'merge', sha });
   if (!merged.ok) {
+    // main moved between the look above and the merge (another pull request
+    // landed): the forge's rules refuse it, rightly. Catch up and check again
+    // rather than fail what passed.
+    const after = await gh('GET', `/compare/${encodeURIComponent(pr.base.ref)}...${sha}`);
+    if (merged.status === 405 && after.ok && after.json.behind_by > 0) {
+      const up = await gh('PUT', `/pulls/${pr.number}/update-branch`, { expected_head_sha: sha });
+      console.log(`gmod: ${pr.base.ref} moved on just as #${pr.number} was landing; it takes ${pr.base.ref} in and is checked again${up.ok ? '' : ` (couldn't take it in: ${up.status})`}`);
+      if (up.ok) await dispatch({ check: pr.number });
+      return up.ok ? 0 : 1;
+    }
     console.log(`gmod: couldn't land #${pr.number} (${merged.status}): ${JSON.stringify(merged.json)}`);
     return 1;
   }
