@@ -133,8 +133,37 @@ if (what === 'land') {
   process.exit(0);
 }
 
+if (what === 'fix') {
+  // An agent's own merge request failed its gate or review: an agent picks
+  // the job up and fixes it, at most FIX_TRIES times.
+  const job = (env.CI_MERGE_REQUEST_SOURCE_BRANCH_NAME || '').replace(/^gmod\//, '');
+  const root = core.repoRoot(env.CI_PROJECT_DIR || process.cwd());
+  core.syncClaims(root);
+  if (Number(env.GMOD_AGENTS || 0) < 1 || core.claims(root)[job]?.by !== agents.AGENT.email) {
+    console.log(`gmod: !${iid} isn't an agent's job (or agents are off); a person fixes it`);
+    process.exit(0);
+  }
+  const notes = await call('GET', `/merge_requests/${iid}/notes?per_page=100&sort=asc`);
+  const list = notes.ok ? notes.json ?? [] : [];
+  const tries = list.filter(n => (n.body ?? '').startsWith(agents.FIX_MARKER)).length;
+  if (tries >= agents.FIX_TRIES) {
+    await call('POST', '/issues', { title: `gmod stuck: ${job}`, description: `Agents tried ${tries} times to make !${iid} pass its checks, and it still doesn't. It needs a person: read its gate and review notes.\n\nNo agent takes ${job} again while this issue is open.` });
+    console.log(`gmod: !${iid} failed after ${tries} fixes; reported stuck`);
+    process.exit(0);
+  }
+  await call('POST', `/merge_requests/${iid}/notes`, { body: `${agents.FIX_MARKER}\ngmod: an agent is fixing what failed (try ${tries + 1} of ${agents.FIX_TRIES}).` });
+  const reports = list.filter(n => /^<!-- gmod-(gate|review) -->/.test(n.body ?? '')).map(n => n.body.replace(/^<!-- [^>]+ -->\n/, ''));
+  git(['checkout', '-q', '--detach', env.CI_COMMIT_SHA]);
+  const before = (await call('GET', `/merge_requests/${iid}`)).json?.sha;
+  const r = agents.runAgent({ root, home, key: env.GMOD_AGENT_KEY, version: env.GMOD_CLAUDE_VERSION || 'latest', env: { GITLAB_TOKEN: token, GMOD_TOKEN: token }, prompt: agents.fixPrompt({ job, number: iid, reports }) });
+  const after = (await call('GET', `/merge_requests/${iid}`)).json?.sha;
+  if (after && after !== before) console.log(`gmod: the agent pushed a fix to !${iid}; its new pipeline decides`);
+  else await call('POST', `/merge_requests/${iid}/notes`, { body: `gmod: the agent couldn't fix it:\n\n> ${r.said.split('\n').slice(-6).join('\n> ') || '(it said nothing)'}` });
+  process.exit(0);
+}
+
 if (what !== 'after') {
-  console.log(`gmod: ci/gitlab.mjs gate|review|land|after (not ${what})`);
+  console.log(`gmod: ci/gitlab.mjs gate|review|land|fix|after (not ${what})`);
   process.exit(2);
 }
 

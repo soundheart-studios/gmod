@@ -9,6 +9,7 @@ import * as setupLib from '../lib/setup.mjs';
 import * as runnerLib from '../lib/runner.mjs';
 import { readFileSync as readSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 const HELP = `gmod: planned work with proof, on plain git
 
@@ -80,6 +81,9 @@ const HELP = `gmod: planned work with proof, on plain git
                                   set up CI on GitHub, GitLab or Gitea: gmod pinned, main's rules,
                                   .gmod/protect.json; proven by landing them
   gmod doctor                     is everything in place? each ✗ with its fix
+  gmod app create [--name <n>] · gmod app finish <code>
+                                  GitHub: create a GitHub App for gmod to work as (one click), then
+                                  keep its key; gmod setup --app uses it
   gmod runner up [--labels <name:docker://image>,...] [--capacity <n>] [--instance <url>]
                                   Gitea: a runner for this repository in Docker (the local daemon,
                                   or DOCKER_HOST=ssh://user@host for another machine's)
@@ -104,7 +108,7 @@ function parse(argv) {
     const a = argv[i];
     if (!a.startsWith('--')) rest.push(a);
     else if (a === '--version') rest.unshift('version');
-    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr', '--advice', '--no-wait', '--candidates', '--resume'].includes(a)) flags[a.slice(2)] = true;
+    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr', '--advice', '--no-wait', '--candidates', '--resume', '--app'].includes(a)) flags[a.slice(2)] = true;
     else if (a === '--trailer') (flags.trailer ??= []).push(argv[++i]);
     else flags[a.slice(2)] = argv[++i];
   }
@@ -161,9 +165,42 @@ async function main() {
   const root = core.repoRoot();
   if (cmd === 'setup') {
     const reviewer = flags.reviewer === 'none' ? { kind: 'none' } : flags['reviewer-url'] ? { kind: 'openai', url: flags['reviewer-url'], model: flags['reviewer-model'] } : { kind: 'claude' };
-    const r = await setupLib.setup(root, { url: flags.url, reviewer, blocking: !flags.advice, setup: flags.setup ?? '', ref: flags.ref, runsOn: flags['runs-on'], agents: flags.agents ? Number(flags.agents) : 0, wait: !flags['no-wait'], log: s => !flags.json && console.log(`${s.ok ? '✓' : '✗'} ${s.msg}`) });
+    const r = await setupLib.setup(root, { url: flags.url, reviewer, blocking: !flags.advice, setup: flags.setup ?? '', ref: flags.ref, runsOn: flags['runs-on'], agents: flags.agents ? Number(flags.agents) : 0, app: !!flags.app, wait: !flags['no-wait'], log: s => !flags.json && console.log(`${s.ok ? '✓' : '✗'} ${s.msg}`) });
     if (flags.json) out(flags, r, '');
     return r.ok ? 0 : 1;
+  }
+  if (cmd === 'app' && (args[0] === 'create' || args[0] === 'finish')) {
+    const { appManifest } = await import('../lib/app.mjs');
+    const { writeFileSync, mkdirSync, chmodSync } = await import('node:fs');
+    const { homedir, tmpdir } = await import('node:os');
+    const forge = ci.detectForge(root, { url: flags.url });
+    if (forge.kind !== 'github') throw new core.GmodError('gmod app is for GitHub');
+    if (args[0] === 'create') {
+      // A form GitHub's own page takes: one click creates the App.
+      const name = flags.name ?? `gmod-${forge.owner}`.slice(0, 34);
+      const manifest = JSON.stringify(appManifest({ name, owner: forge.owner }));
+      const file = join(tmpdir(), `gmod-app-${forge.owner}.html`);
+      const esc = x => x.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      writeFileSync(file, `<!doctype html><meta charset="utf-8"><title>Create the gmod App</title><body style="font:16px system-ui;margin:3em"><form method="post" action="https://github.com/settings/apps/new?state=gmod"><input type="hidden" name="manifest" value="${esc(manifest)}"><p>Creates a private GitHub App, <b>${esc(name)}</b>, on your account, for gmod to work as.</p><button style="font-size:18px">Create ${esc(name)} on GitHub</button></form><p>GitHub then sends you to a page whose address ends <code>?code=…&amp;state=gmod</code>. Copy the code and run <code>gmod app finish &lt;code&gt;</code>.</p>`);
+      return out(flags, { file, name }, `open ${file}: one click creates the App ${name}; then gmod app finish <the code from the address GitHub sends you to>`);
+    }
+    if (!args[1]) throw new core.GmodError('gmod app finish <code>: the code from the address GitHub sent you to');
+    const res = await fetch(`https://api.github.com/app-manifests/${encodeURIComponent(args[1])}/conversions`, { method: 'POST', headers: { accept: 'application/vnd.github+json' } });
+    if (!res.ok) throw new core.GmodError(`GitHub wouldn't trade that code (${res.status}): codes last an hour and work once; gmod app create again`);
+    const app = await res.json();
+    const dir = join(homedir(), '.config', 'gmod');
+    mkdirSync(dir, { recursive: true });
+    const keyFile = join(dir, `app-${app.slug}.pem`);
+    writeFileSync(keyFile, app.pem, { mode: 0o600 });
+    chmodSync(keyFile, 0o600);
+    const repo = `${forge.owner}/${forge.repo}`;
+    return out(flags, { id: app.id, slug: app.slug, keyFile }, [
+      `created ${app.slug} (App ID ${app.id}); its key is in ${keyFile}`,
+      `1. install it on ${repo}: https://github.com/apps/${app.slug}/installations/new`,
+      `2. gh secret set GMOD_APP_ID --repo ${repo} --body ${app.id}`,
+      `3. gmod ci secret GMOD_APP_KEY --from-file ${keyFile}`,
+      `4. gmod setup --app (with your other setup flags), or add app-id and app-key to the workflow`,
+    ].join('\n'));
   }
   if (cmd === 'runner' && args[0] === 'up') {
     const r = await runnerLib.runnerUp(root, { url: flags.url, labels: flags.labels ? flags.labels.split(',') : undefined, capacity: flags.capacity ? Number(flags.capacity) : undefined, instance: flags.instance });

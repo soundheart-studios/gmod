@@ -809,3 +809,32 @@ test('journal: notes and red/green land in .gmod/journal/<job>.md, without upset
     assert.match(gmod(w.alice, 'verify', '--base', 'origin/main').out, /outside the job: \.gmod\/journal\/add-mul\.md/);
   } finally { w.done(); }
 });
+
+test('your own claim, from another run: picked up on its branch, with red from the proof', () => {
+  const w = world();
+  try {
+    // A first run (an agent in CI) does the job and pushes its branch.
+    assert.equal(gmod(w.alice, 'claim', 'add-sum').code, 0);
+    write(w.alice, { 'test/sum.test.mjs': TEST });
+    assert.equal(gmod(w.alice, 'check').code, 1);
+    write(w.alice, { 'src/sum.mjs': CODE });
+    assert.equal(gmod(w.alice, 'check').code, 0);
+    const c = gmod(w.alice, 'commit', '-m', 'sum adds', '--no-pr');
+    assert.equal(c.code, 0, c.err);
+    // A later run, same identity, fresh checkout: picks it up to fix it.
+    const again = join(w.top, 'again');
+    clone(w.origin, again, 'alice@x.io');
+    const r = gmod(again, 'claim', 'add-sum');
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, /where it was left; red recorded from the proof/);
+    assert.equal(sh(again, 'git', ['rev-parse', '--abbrev-ref', 'HEAD']), 'gmod/add-sum');
+    write(again, { 'src/sum.mjs': 'export const sum = (a, b) => b + a;\n' });
+    assert.equal(gmod(again, 'check').code, 0);
+    const g = gmod(again, 'gate-commit');
+    assert.equal(g.code, 0, g.out + g.err);
+    // Someone else's claim still isn't theirs to take.
+    const other = gmod(w.bob, 'claim', 'add-sum');
+    assert.equal(other.code, 1);
+    assert.match(other.err, /claimed by alice@x\.io/);
+  } finally { w.done(); }
+});

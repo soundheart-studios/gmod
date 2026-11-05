@@ -89,6 +89,19 @@ gmod-land:
   script:
     - node "$GMOD_HOME/ci/gitlab.mjs" land
 
+# When the gate or the review fails on an agent's own merge request (with
+# agents on): an agent picks the job up and fixes it, at most twice.
+gmod-fix:
+  extends: .gmod-job
+  stage: $[[ inputs.stage ]]
+  needs: [gmod-gate, gmod-review]
+  when: on_failure
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^gmod\// && $GMOD_AGENT_KEY
+      when: on_failure
+  script:
+    - node "$GMOD_HOME/ci/gitlab.mjs" fix
+
 # After something lands on main, and hourly (a pipeline schedule): claims let
 # go, the tripwire, other job branches catch up, what isn't landing.
 gmod-after:

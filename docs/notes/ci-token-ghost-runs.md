@@ -1,6 +1,6 @@
 # Ghost runs from CI's own token
 
-Status: open. Found 2026-11-03, seen again with agents in CI on 2026-11-05 (gmod-test-gh #19, #20).
+Status: answered by `gmod app create` (gmod 1.3.0): with an App, nothing is opened with CI's own token. Found 2026-11-03, seen again with agents in CI on 2026-11-05 (gmod-test-gh #19, #20).
 
 ## What you see
 

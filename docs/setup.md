@@ -20,10 +20,22 @@ It protects `main`, writes the CI file and `.gmod/protect.json`, and lands them 
 | `--advice` | the review only comments; the gate alone decides |
 | `--setup '<cmd>'` | install the project's dependencies before checks run, e.g. `npm ci` |
 | `--agents <n>` | agents in CI take ready jobs, at most `n` at once; needs the `GMOD_AGENT_KEY` secret ([agents](agents.md)) |
+| `--app` | GitHub: work as the gmod App ([below](#a-github-app)) |
 | `--runs-on <label>` | Gitea: which runner takes the jobs |
 | `--ref <vX>` | pin another gmod release |
 
 Afterwards, `gmod doctor` checks everything is still in place (each ✗ comes with its fix), and `gmod ci upgrade` opens a pull request that moves the pinned gmod to the newest release.
+
+## A GitHub App
+
+By default gmod acts with CI's own token on GitHub. That works, but GitHub then leaves empty, red runs behind the pull requests agents open ([why](notes/ci-token-ghost-runs.md)), and everything shows as `github-actions`. With an App, gmod and its agents act as the App:
+
+```
+gmod app create          # opens a page: one click creates a private App on your account
+gmod app finish <code>   # the code from the address GitHub sends you to; keeps the App's key
+```
+
+It then prints the three steps left: install the App on the repository, keep its ID and key as the `GMOD_APP_ID` and `GMOD_APP_KEY` secrets, and `gmod setup --app`.
 
 ## How gmod knows your forge
 

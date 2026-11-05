@@ -40,12 +40,29 @@ import * as core from '../lib/core.mjs';
 import * as agents from '../lib/agent.mjs';
 
 const home = process.env.GMOD_HOME;
-const token = process.env.GMOD_GITHUB_TOKEN;
+let token = process.env.GMOD_GITHUB_TOKEN;
 const repo = process.env.GITHUB_REPOSITORY;
 const api = (process.env.GITHUB_API_URL || 'https://api.github.com').replace(/\/$/, '');
 // Gitea's Actions set GITHUB_API_URL too, under /api/v1.
 const gitea = process.env.GMOD_FORGE ? process.env.GMOD_FORGE === 'gitea' : /\/api\/v1$/.test(api);
-const forgeToken = process.env.GMOD_FORGE_TOKEN || '';
+let forgeToken = process.env.GMOD_FORGE_TOKEN || '';
+// With a GitHub App (app-id, app-key): everything as the App. What it opens,
+// updates and merges starts runs by itself, so no dispatch is needed for
+// those, and git pushes as the App too.
+let viaApp = false;
+if (!gitea && process.env.GMOD_APP_ID && process.env.GMOD_APP_KEY) {
+  const { appToken } = await import('../lib/app.mjs');
+  try {
+    token = await appToken({ appId: process.env.GMOD_APP_ID, key: process.env.GMOD_APP_KEY, repo, api });
+    forgeToken = token;
+    viaApp = true;
+    const basic = Buffer.from(`x-access-token:${token}`).toString('base64');
+    spawnSync('git', ['config', '--local', 'http.https://github.com/.extraheader', `AUTHORIZATION: basic ${basic}`]);
+    console.log('gmod: working as the gmod App');
+  } catch (e) {
+    console.log(`gmod: ${e.message}; working with CI's own token instead`);
+  }
+}
 const CONTEXT = { gate: gitea ? 'gmod / gate (pull_request)' : 'gmod / gate', review: gitea ? 'gmod / review (pull_request)' : 'gmod / review' };
 const event = process.env.GITHUB_EVENT_NAME;
 const payload = process.env.GITHUB_EVENT_PATH ? JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8')) : {};
@@ -110,7 +127,7 @@ async function dispatch(clientPayload) {
 
 // What follows a landing: claims, the tripwire, catch-up, what's stuck.
 async function afterMerge(sha) {
-  const env = { GMOD_TOKEN: token, GMOD_SHA: sha, GMOD_FORGE: gitea ? 'gitea' : 'github' };
+  const env = { GMOD_TOKEN: token, GMOD_SHA: sha, GMOD_FORGE: gitea ? 'gitea' : 'github', ...(viaApp ? { GMOD_FORGE_TOKEN: token } : {}) };
   const swept = run('bin/gmod.mjs', ['sweep']);
   const after = run('ci/after-merge.mjs', [], env);
   await startAgents();
@@ -180,7 +197,7 @@ async function openFinished(root) {
       return true;
     }
     console.log(`gmod: ${j.id} was finished on ${branch}; opened #${number}${gitea ? '' : ', now checked'}`);
-    if (!gitea) await dispatch({ check: number });
+    if (!gitea && !viaApp) await dispatch({ check: number });
     return true;
   }
   return false;
@@ -203,7 +220,7 @@ async function work() {
     const pr = (open.ok ? open.json ?? [] : []).find(p => p.head?.ref === `gmod/${job}`);
     if (pr) {
       // On GitHub it was opened with CI's own token, which starts no run.
-      if (!gitea) await dispatch({ check: pr.number });
+      if (!gitea && !viaApp) await dispatch({ check: pr.number });
       started++;
       console.log(`gmod: the agent finished ${job}: #${pr.number}`);
       continue;
@@ -215,6 +232,89 @@ async function work() {
   }
   if (!r.claimed.length) console.log('gmod: the agent took no job');
   return r.ok || started ? 0 : 1;
+}
+
+// ---------- agents fix their own pull requests ----------
+
+// Is this pull request an agent's? Its job is held by the agent.
+function agentsJob(pr) {
+  const id = pr.head?.ref?.match(/^gmod\/(.+)$/)?.[1];
+  if (!id) return null;
+  const root = core.repoRoot();
+  core.syncClaims(root);
+  return core.claims(root)[id]?.by === agents.AGENT.email ? id : null;
+}
+
+// A failed check on an agent's own pull request: an agent fixes it (on
+// GitHub in a run of its own, on Gitea in this one). The run still fails:
+// what was checked failed.
+async function failed(pr) {
+  if (agentKey && AGENTS && agentsJob(pr)) {
+    if (gitea) await fix(pr.number);
+    else await dispatch({ fix: pr.number });
+  }
+  return 1;
+}
+
+const commentsOf = async number => {
+  const r = await gh('GET', gitea ? `/issues/${number}/comments?limit=50` : `/issues/${number}/comments?per_page=100`);
+  return r.ok ? r.json ?? [] : [];
+};
+
+// An agent picks its job back up, with the checks' reports (or a
+// maintainer's request) as its brief. At most FIX_TRIES tries for failed
+// checks; then the job is reported stuck for a person.
+async function fix(number, request) {
+  if (!agentKey) return 0;
+  const pr = (await gh('GET', `/pulls/${number}`)).json;
+  if (!pr || pr.state !== 'open') return 0;
+  const job = agentsJob(pr);
+  if (!job) {
+    console.log(`gmod: #${number} isn't an agent's job; a person fixes it`);
+    return 0;
+  }
+  const comments = await commentsOf(number);
+  const tries = comments.filter(c => (c.body ?? '').startsWith(agents.FIX_MARKER)).length;
+  if (!request && tries >= agents.FIX_TRIES) {
+    const stuck = await stuckJobs();
+    if (!stuck.has(job)) await gh('POST', '/issues', { title: `gmod stuck: ${job}`, body: `Agents tried ${tries} times to make #${number} pass its checks, and it still doesn't. It needs a person: read its gate and review comments.\n\nNo agent takes ${job} again while this issue is open.` });
+    console.log(`gmod: #${number} failed after ${tries} fixes; reported stuck`);
+    return 0;
+  }
+  await gh('POST', `/issues/${number}/comments`, { body: `${agents.FIX_MARKER}\ngmod: an agent is ${request ? 'working on the request above' : `fixing what failed (try ${tries + 1} of ${agents.FIX_TRIES})`}.` });
+  const reports = comments.filter(c => /^<!-- gmod-(gate|review) -->/.test(c.body ?? '')).map(c => c.body.replace(/^<!-- [^>]+ -->\n/, ''));
+  const root = core.repoRoot();
+  const r = agents.runAgent({
+    root, home, key: agentKey, version: process.env.GMOD_CLAUDE_VERSION || 'latest', turns: process.env.GMOD_AGENT_TURNS || '60',
+    env: { ...prEnv(), GMOD_TOKEN: forgeToken || token },
+    prompt: agents.fixPrompt({ job, number, reports, request }),
+  });
+  const now = (await gh('GET', `/pulls/${number}`)).json;
+  if (now?.head?.sha && now.head.sha !== pr.head.sha) {
+    console.log(`gmod: the agent pushed a fix to #${number}`);
+    if (!gitea && !viaApp) await dispatch({ check: number });
+    return 0;
+  }
+  console.log(`gmod: the agent didn't change #${number}: ${r.said.split('\n').slice(-2).join(' ')}`);
+  await gh('POST', `/issues/${number}/comments`, { body: `gmod: the agent couldn't ${request ? 'do that' : 'fix it'}:\n\n> ${r.said.split('\n').slice(-6).join('\n> ') || '(it said nothing)'}` });
+  return 0;
+}
+
+// "@gmod …" from someone who can write to the repository, on an agent's
+// pull request: an agent does what it says.
+async function mention() {
+  const body = payload.comment?.body ?? '';
+  const issue = payload.issue;
+  if (!/(^|\s)@gmod\b/.test(body) || !issue?.pull_request) return 0;
+  const who = payload.comment?.user?.login ?? payload.sender?.login;
+  if (/\[bot\]$/.test(who ?? '') || body.startsWith(agents.FIX_MARKER)) return 0;
+  const perm = await gh('GET', `/collaborators/${encodeURIComponent(who)}/permission`);
+  const level = perm.json?.permission ?? perm.json?.role_name;
+  if (!['admin', 'maintain', 'write', 'owner'].includes(level)) {
+    console.log(`gmod: ${who} can't ask agents for work here (${level ?? 'no access'})`);
+    return 0;
+  }
+  return fix(issue.number, body.replace(/(^|\s)@gmod\b/, '$1').trim());
 }
 
 // Gate, review, and land one pull request, as checked out at its head.
@@ -232,7 +332,7 @@ async function checkAndLand(pr) {
   const gate = run('bin/gmod.mjs', ['verify', ...common, '--report', 'gate.md'], { GMOD_TOKEN: process.env.GMOD_FORGE_TOKEN || token });
   await status(sha, CONTEXT.gate, gate === 0 ? 'success' : 'failure', gate === 0 ? 'proven' : 'not proven: see the gate comment');
   comment(pr.number, 'gmod-gate', 'gate.md');
-  if (gate !== 0) return 1;
+  if (gate !== 0) return failed(pr);
 
   if (reviewer) {
     await status(sha, CONTEXT.review, 'pending', 'the AI is reading it');
@@ -240,7 +340,7 @@ async function checkAndLand(pr) {
     const review = run('ci/review.mjs', [...common, '--report', 'review.md'], { GMOD_REVIEW_OVERRIDE: labels.includes('gmod-override') ? '1' : '0' });
     await status(sha, CONTEXT.review, review === 0 ? 'success' : 'failure', review === 0 ? 'passed' : 'failed: see the review comment');
     comment(pr.number, 'gmod-review', 'review.md');
-    if (review !== 0) return 1;
+    if (review !== 0) return failed(pr);
   }
 
   // Land it: gmod's own branches only, and only what was just checked.
@@ -264,7 +364,7 @@ async function checkAndLand(pr) {
       return 1;
     }
     console.log(`gmod: ${pr.base.ref} moved on; #${pr.number} takes it in and is checked again`);
-    await dispatch({ check: pr.number });
+    if (!viaApp) await dispatch({ check: pr.number });
     return 0;
   }
   const merged = await gh('PUT', `/pulls/${pr.number}/merge`, { merge_method: 'merge', sha });
@@ -276,7 +376,7 @@ async function checkAndLand(pr) {
     if (merged.status === 405 && after.ok && after.json.behind_by > 0) {
       const up = await gh('PUT', `/pulls/${pr.number}/update-branch`, { expected_head_sha: sha });
       console.log(`gmod: ${pr.base.ref} moved on just as #${pr.number} was landing; it takes ${pr.base.ref} in and is checked again${up.ok ? '' : ` (couldn't take it in: ${up.status})`}`);
-      if (up.ok) await dispatch({ check: pr.number });
+      if (up.ok && !viaApp) await dispatch({ check: pr.number });
       return up.ok ? 0 : 1;
     }
     console.log(`gmod: couldn't land #${pr.number} (${merged.status}): ${JSON.stringify(merged.json)}`);
@@ -284,7 +384,7 @@ async function checkAndLand(pr) {
   }
   console.log(`gmod: landed #${pr.number} on ${pr.base.ref}`);
   // What CI's own token merges starts no push run: start what follows a landing.
-  await dispatch({ landed: merged.json.sha });
+  if (!viaApp) await dispatch({ landed: merged.json.sha });
   return 0;
 }
 
@@ -318,6 +418,7 @@ if (event === 'repository_dispatch' && payload.action === 'gmod') {
   const p = payload.client_payload ?? {};
   if (p.landed) process.exit(await afterMerge(p.landed));
   if (p.work) process.exit(await work());
+  if (p.fix) process.exit(await fix(p.fix));
   if (p.check) {
     // Taking main in happens on GitHub's side, a moment after it's asked for.
     let pr;
@@ -334,6 +435,8 @@ if (event === 'repository_dispatch' && payload.action === 'gmod') {
     process.exit(await checkAndLand(pr));
   }
 }
+
+if (event === 'issue_comment') process.exit(await mention());
 
 if (event === 'push' || event === 'schedule' || event === 'workflow_dispatch') {
   process.exit(await afterMerge(process.env.GITHUB_SHA));

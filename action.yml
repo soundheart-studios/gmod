@@ -31,6 +31,12 @@ inputs:
   claude-version:
     description: The Claude Code version agents run.
     default: '2.1.318'
+  app-id:
+    description: A GitHub App's ID (gmod app create). With app-key, gmod works as that App, not CI's own token.
+    default: ''
+  app-key:
+    description: The GitHub App's private key.
+    default: ''
   checkout:
     description: Check the repository out first ("false" when the workflow already has, e.g. on Gitea, where it also fetched gmod).
     default: 'true'
@@ -67,5 +73,7 @@ runs:
         ANTHROPIC_API_KEY: ${{ inputs.reviewer-url == '' && inputs.reviewer-key || '' }}
         GMOD_REVIEW_MODE: ${{ inputs.blocking == 'false' && 'comment' || '' }}
         GMOD_AGENT_KEY: ${{ inputs.agent-key }}
+        GMOD_APP_ID: ${{ inputs.app-id }}
+        GMOD_APP_KEY: ${{ inputs.app-key }}
         GMOD_AGENTS: ${{ inputs.agents }}
         GMOD_CLAUDE_VERSION: ${{ inputs.claude-version }}

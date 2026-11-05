@@ -8,6 +8,7 @@
 | `gmod setup` | set up CI for this repository, and prove it by landing it |
 | `gmod doctor` | check the setup; each ✗ with its fix |
 | `gmod ci upgrade [--candidates]` | a pull request moving the pinned gmod to its newest release |
+| `gmod app create`, `gmod app finish <code>` | GitHub: create an App for gmod and its agents to act as |
 | `gmod runner up` | Gitea: start a runner in Docker (`DOCKER_HOST=ssh://…` for another machine) |
 | `gmod ci secret <NAME>` | set a CI secret through the forge's CLI, the value piped in |
 | `gmod status`, `gmod next` | where everything stands; the next ready job |
