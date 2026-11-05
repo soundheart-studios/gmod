@@ -6,6 +6,7 @@ import * as ci from '../lib/ci.mjs';
 import * as adr from '../lib/adr.mjs';
 import * as rcv from '../lib/receive.mjs';
 import * as setupLib from '../lib/setup.mjs';
+import * as runnerLib from '../lib/runner.mjs';
 import { readFileSync as readSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -75,9 +76,13 @@ const HELP = `gmod: planned work with proof, on plain git
                                   on the forge's machine: refuse moving claims, and letting go of
                                   someone else's (Gitea's pre-receive.d)
   gmod receive                    the hook itself: reads pushed refs on stdin
-  gmod setup [--reviewer-url <u> --reviewer-model <m> | --reviewer none] [--advice] [--setup '<cmd>'] [--ref <vX>] [--no-wait]
-                                  set up CI on GitHub: the gmod action, main's rules, .gmod/protect.json; proven by landing them
+  gmod setup [--reviewer-url <u> --reviewer-model <m> | --reviewer none] [--advice] [--setup '<cmd>'] [--ref <vX>] [--runs-on <label>] [--no-wait]
+                                  set up CI on GitHub, GitLab or Gitea: gmod pinned, main's rules,
+                                  .gmod/protect.json; proven by landing them
   gmod doctor                     is everything in place? each ✗ with its fix
+  gmod runner up [--labels <name:docker://image>,...] [--capacity <n>] [--instance <url>]
+                                  Gitea: a runner for this repository in Docker (the local daemon,
+                                  or DOCKER_HOST=ssh://user@host for another machine's)
   gmod ci upgrade [--to <vX>] [--candidates]   a pull request moving the gmod action to its newest release
   gmod ci secret <NAME> [--from-file <f>]  set a CI secret (the value piped in, or from a file)
   gmod ci forge-token [--token-file <f>] [--url <u>]
@@ -156,9 +161,13 @@ async function main() {
   const root = core.repoRoot();
   if (cmd === 'setup') {
     const reviewer = flags.reviewer === 'none' ? { kind: 'none' } : flags['reviewer-url'] ? { kind: 'openai', url: flags['reviewer-url'], model: flags['reviewer-model'] } : { kind: 'claude' };
-    const r = await setupLib.setup(root, { url: flags.url, reviewer, blocking: !flags.advice, setup: flags.setup ?? '', ref: flags.ref, wait: !flags['no-wait'], log: s => !flags.json && console.log(`${s.ok ? '✓' : '✗'} ${s.msg}`) });
+    const r = await setupLib.setup(root, { url: flags.url, reviewer, blocking: !flags.advice, setup: flags.setup ?? '', ref: flags.ref, runsOn: flags['runs-on'], wait: !flags['no-wait'], log: s => !flags.json && console.log(`${s.ok ? '✓' : '✗'} ${s.msg}`) });
     if (flags.json) out(flags, r, '');
     return r.ok ? 0 : 1;
+  }
+  if (cmd === 'runner' && args[0] === 'up') {
+    const r = await runnerLib.runnerUp(root, { url: flags.url, labels: flags.labels ? flags.labels.split(',') : undefined, capacity: flags.capacity ? Number(flags.capacity) : undefined, instance: flags.instance });
+    return out(flags, r, r.already ? `${r.name} is already there (${r.already})` : `${r.name} is up and ${r.status}: takes ${r.labels.join(', ')} for ${r.forge.owner}/${r.forge.repo}`);
   }
   if (cmd === 'doctor') {
     const r = await setupLib.doctor(root, { url: flags.url });
