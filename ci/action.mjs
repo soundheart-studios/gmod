@@ -120,6 +120,36 @@ async function startAgents() {
   if (ready.length || held) console.log(`gmod: ${ready.length} job(s) ready, ${held} with agents; ${Math.max(0, n)} agent(s) started`);
 }
 
+// A ready job whose branch already holds its commit, with no pull request
+// (its agent was refused at the last step): open it, without a model. CI
+// proves it all again anyway.
+async function openFinished(root) {
+  git('fetch', '-q', 'origin', '+refs/heads/*:refs/remotes/origin/*');
+  const plan = core.planFromDisk(root);
+  if (!plan) return false;
+  const open = await gh('GET', '/pulls?state=open&per_page=100');
+  const opened = new Set((open.ok ? open.json ?? [] : []).map(p => p.head?.ref));
+  for (const j of core.states(root, plan, { sync: true }).filter(x => x.state === 'ready')) {
+    const branch = `gmod/${j.id}`;
+    if (opened.has(branch)) continue;
+    const subjects = core.git(['log', '--format=%s', `origin/${plan.main ?? 'main'}..origin/${branch}`], { cwd: root, allow: true });
+    if (!subjects.ok || !subjects.out.split('\n').some(x => x.startsWith(`${j.id}:`))) continue;
+    if (run('bin/gmod.mjs', ['claim', j.id]) !== 0) continue;
+    const pr = spawnSync('node', [join(home, 'bin/gmod.mjs'), 'pr', '--auto', '--json'], { encoding: 'utf8', env: { ...process.env, GH_TOKEN: token } });
+    const url = (pr.stdout || '').match(/"url":\s*"([^"]+)"/)?.[1];
+    const number = Number(url?.match(/(\d+)$/)?.[1]);
+    if (!number) {
+      console.log(`gmod: ${j.id} is finished on ${branch}, and its pull request still can't be opened: ${(pr.stderr || pr.stdout || '').trim()}`);
+      run('bin/gmod.mjs', ['release', j.id]);
+      return true;
+    }
+    console.log(`gmod: ${j.id} was finished on ${branch}; opened #${number}, now checked`);
+    await dispatch({ check: number });
+    return true;
+  }
+  return false;
+}
+
 // One agent, one job: Claude Code headless with gmod loaded.
 async function work() {
   if (!agentKey) {
@@ -129,6 +159,7 @@ async function work() {
   git('config', 'user.name', AGENT.name);
   git('config', 'user.email', AGENT.email);
   const root = core.repoRoot();
+  if (await openFinished(root)) return 0;
   const before = new Set(Object.keys(core.claims(root)));
   const install = spawnSync('npm', ['install', '-g', '--no-audit', '--no-fund', `@anthropic-ai/claude-code@${process.env.GMOD_CLAUDE_VERSION || 'latest'}`], { stdio: 'inherit' });
   if (install.status !== 0) return 1;
