@@ -38,7 +38,8 @@ test('the newest release, and release candidates only when asked for', () => {
 test('on Gitea: the action from the Gitea copy of gmod, on its runner, with the person\'s token', async () => {
   const { actionWorkflow, reviewerSecret } = await import('../lib/setup.mjs');
   const y = actionWorkflow({ forge: 'gitea', action: 'acme/gmod', ref: 'v1.0.0', runsOn: 'ai-local-docker', reviewer: { kind: 'openai', url: 'http://127.0.0.1:8080/v1' } });
-  assert.match(y, /repository: acme\/gmod, ref: v1\.0\.0, path: \.gmod-tool, token: \$\{\{ secrets\.GMOD_FORGE_TOKEN \}\}/);
+  assert.match(y, /repository: acme\/gmod\n\s+ref: v1\.0\.0\n\s+path: \.gmod-tool\n\s+token: \$\{\{ secrets\.GMOD_FORGE_TOKEN \}\}/);
+  assert.doesNotMatch(y, /\{[^\n]*\$\{\{/, 'no ${{ }} inside a {flow} mapping');
   assert.match(y, /uses: \.\/\.gmod-tool\n/);
   assert.match(y, /checkout: 'false'/);
   assert.match(y, /runs-on: ai-local-docker/);
