@@ -25,6 +25,8 @@ After each landing, and hourly, gmod counts the jobs that are ready and the ones
 
 If the gate or the review fails an agent's pull request, an agent picks the job up on its branch, reads the reports, fixes it within the job's files, and pushes again. Its failing-first run comes from the proof: the job's tests, with its code put back, fail. At most two tries (`GMOD_FIX_TRIES`); then the job is reported stuck for a person.
 
+Agents' pull requests land as soon as they pass. To ask for a change first, put the `gmod-hold` label on it: it's still checked, but lands only once the label comes off.
+
 On GitHub and Gitea, a comment starting `@gmod` on an agent's pull request, from someone who can write to the repository, does the same with the comment as the brief: `@gmod also handle an empty list`. On GitLab, comments don't start pipelines, so there it's failed checks only.
 
 An agent that can't finish lets the job go and opens a **gmod stuck** issue saying why. No agent takes that job again while the issue is open: close it to let one try again. An agent's hold on a job is let go once it has had no open pull request for an hour (its pull request was closed, or its run died). gmod never reopens work whose pull request a person closed.

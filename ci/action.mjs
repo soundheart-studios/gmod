@@ -348,6 +348,11 @@ async function checkAndLand(pr) {
     console.log('gmod: passed; not a gmod branch (or a draft), so a person merges it');
     return 0;
   }
+  // A person holding it (to ask for a change with @gmod, say): checked, not landed.
+  if ((pr.labels ?? []).some(l => l.name === 'gmod-hold')) {
+    console.log('gmod: passed; held with the gmod-hold label, so it lands once that comes off');
+    return 0;
+  }
   const now = await gh('GET', `/pulls/${pr.number}`);
   if (!now.ok || now.json.state !== 'open') return 0;
   if (now.json.head.sha !== sha) {
