@@ -1,6 +1,6 @@
 # Agents, on your machine and in CI
 
-| | On your machine | In CI (GitHub) |
+| | On your machine | In CI (GitHub, GitLab, Gitea) |
 |---|---|---|
 | **Who starts it** | You: `/gmod:work` in Claude Code | CI: after each landing, and hourly, one agent per ready job |
 | **What you see** | The gmod pane: progress, **Needs you**, every job's dots; proposal cards to approve | The forge: pull requests, their checks and reviews, and an issue if a job gets stuck |
@@ -19,9 +19,11 @@ Turn them on with `gmod setup --agents 1` and a key, kept as the `GMOD_AGENT_KEY
           agents: 1
 ```
 
-After each landing, gmod counts the jobs that are ready, and the claims agents already hold, and starts one run per job up to `agents`. Each run does one job, start to finish, exactly as an agent at a keyboard does: claim, a failing test, a passing one, `mcp__gmod__commit`. Its pull request is gated, reviewed and landed like any other, and that landing starts the agents for the jobs it made ready.
+After each landing, and hourly, gmod counts the jobs that are ready and the ones agents already hold, and starts agents up to `agents`: on GitHub one run per job, on GitLab and Gitea one job in the run that follows the landing. Each run does one job, start to finish, exactly as an agent at a keyboard does: claim, a failing test, a passing one, `mcp__gmod__commit`. Its pull request is gated, reviewed and landed like any other, and that landing starts the agents for the jobs it made ready.
 
-An agent that can't finish lets the job go and opens a **gmod stuck** issue saying why. No agent takes that job again while the issue is open: close it to let one try again. Agents commit as `gmod agent`, and their pull requests come from the forge's own CI identity, not yours.
+An agent that can't finish lets the job go and opens a **gmod stuck** issue saying why. No agent takes that job again while the issue is open: close it to let one try again. An agent's hold on a job is let go once it has had no open pull request for an hour (its pull request was closed, or its run died). gmod never reopens work whose pull request a person closed.
+
+Agents commit as `gmod agent`. Their pull requests come from GitHub's CI identity on GitHub, and from the person's token on GitLab and Gitea (a pull request opened with those forges' CI token starts no checks). On GitHub the repository must let Actions open pull requests; `gmod setup --agents` turns that on, and `gmod doctor` checks it.
 
 ## The pane
 

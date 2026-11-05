@@ -19,7 +19,7 @@ It protects `main`, writes the CI file and `.gmod/protect.json`, and lands them 
 | `--reviewer-url <u> --reviewer-model <m>` | any OpenAI-compatible reviewer; leave out for Claude, `--reviewer none` for no review |
 | `--advice` | the review only comments; the gate alone decides |
 | `--setup '<cmd>'` | install the project's dependencies before checks run, e.g. `npm ci` |
-| `--agents <n>` | GitHub: agents in CI take ready jobs, at most `n` at once ([agents](agents.md)) |
+| `--agents <n>` | agents in CI take ready jobs, at most `n` at once; needs the `GMOD_AGENT_KEY` secret ([agents](agents.md)) |
 | `--runs-on <label>` | Gitea: which runner takes the jobs |
 | `--ref <vX>` | pin another gmod release |
 

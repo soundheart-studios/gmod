@@ -80,10 +80,12 @@ Found while setting up the test bed: on a personal account without Pro, a privat
   - Done when: each lands on green, and the next job after it does too.
 - **release-v1:** tag `v1`, move `~/gmod` to it, and retire the host-path workflow and the token file.
 
-### 7 · Agents in CI ✅ (v1.1.0, GitHub)
+### 7 · Agents in CI ✅ (v1.1.0 GitHub, v1.2.0 GitLab and Gitea)
 - Proven on gmod-test-gh: approving a two-job plan was the last human step. Its landing (#17) started a CI agent; word-frequency (#19) and then keywords (#20) were written by "gmod agent", gated, reviewed and landed by app/github-actions, the second started by the first one's landing.
 - Found live: GitHub refuses pull requests from Actions unless the repository allows it. The first agent stopped and reported stuck, as designed; setup now turns the setting on and doctor checks it. A retry carries on from the job's branch.
-- Not yet: agents on failed checks or `@gmod`, GitLab and Gitea agents, a bot identity beyond the forge's CI identity.
+- GitLab (v1.2.0): plan !9 → an agent did word-frequency !10 → its landing started keywords !11, both landed.
+- Gitea (v1.2.0, demo): the first agent's tag-index (#18) carried gmod's own checkout (.gmod-tool) and the gate refused it; git now ignores that folder. The agent's hold outlived the closed pull request; holds now go after an hour without one. The hourly run let it go, a fresh agent did tag-index (#19), and it landed.
+- Not yet: agents on failed checks or `@gmod`, a bot identity of their own.
 - **image-claude:** Claude Code and the gmod plugin in the runner image. It signs in from an `agent-key` input (`CLAUDE_CODE_OAUTH_TOKEN` or an API key).
 - **agent-job:** the action starts an agent when a merge makes jobs ready, when a job's checks fail, or on `@gmod`. It runs headless, `claude -p "/gmod:work"`, with at most `agents` at once and a few tries per job, then reports the job stuck.
 - **agent-identity:** commits and pull requests from CI agents under a bot account or GitHub App, not the person's login.

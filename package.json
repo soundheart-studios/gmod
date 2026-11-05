@@ -1,6 +1,6 @@
 {
   "name": "gmod",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Planned work with proof on plain git: a Claude Code mod, a CLI, and a CI gate with an AI reviewer.",
   "type": "module",
   "bin": {
