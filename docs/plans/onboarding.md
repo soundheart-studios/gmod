@@ -85,7 +85,8 @@ Found while setting up the test bed: on a personal account without Pro, a privat
 - Found live: GitHub refuses pull requests from Actions unless the repository allows it. The first agent stopped and reported stuck, as designed; setup now turns the setting on and doctor checks it. A retry carries on from the job's branch.
 - GitLab (v1.2.0): plan !9 → an agent did word-frequency !10 → its landing started keywords !11, both landed.
 - Gitea (v1.2.0, demo): the first agent's tag-index (#18) carried gmod's own checkout (.gmod-tool) and the gate refused it; git now ignores that folder. The agent's hold outlived the closed pull request; holds now go after an hour without one. The hourly run let it go, a fresh agent did tag-index (#19), and it landed.
-- Not yet: agents on failed checks or `@gmod`, a bot identity of their own.
+- 1.3.0 on gmod-test-gh: the gmod App opens and lands agents' pull requests, with no empty runs left behind (#26). `gmod-hold` kept #28 open while green; `@gmod also drop empty or whitespace-only sentences, and add a test for it` made an agent push a test; removing the label landed it. A failed gate on #30 (a deliberate off-by-one) sent an agent that fixed it; the gate still refused the branch for carrying a person's commit on the agent's claim, the second try changed nothing, and the job was reported stuck (#31), as designed.
+- Not yet proven live: the fixer and `@gmod` on Gitea, `gmod-fix` on GitLab.
 - **image-claude:** Claude Code and the gmod plugin in the runner image. It signs in from an `agent-key` input (`CLAUDE_CODE_OAUTH_TOKEN` or an API key).
 - **agent-job:** the action starts an agent when a merge makes jobs ready, when a job's checks fail, or on `@gmod`. It runs headless, `claude -p "/gmod:work"`, with at most `agents` at once and a few tries per job, then reports the job stuck.
 - **agent-identity:** commits and pull requests from CI agents under a bot account or GitHub App, not the person's login.
