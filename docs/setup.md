@@ -28,6 +28,8 @@ Afterwards, `gmod doctor` checks everything is still in place (each ✗ comes wi
 
 ## What CI does
 
+![What CI does: the gate, always on; the review, optional, any model; agents, optional, Claude on an Anthropic API key](assets/gmod-ci.png)
+
 | | What it does | Model | On? |
 |---|---|---|---|
 | **1. Gate** | Proves every pull request again: the job's test fails without the change and passes with it, only the job's files changed, the commits are by whoever claimed the job, and `main` is still protected. Green work lands by itself. | none, plain code | always |

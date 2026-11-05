@@ -1,0 +1,130 @@
+<!doctype html>
+<!-- Source of docs/assets/gmod-ci.png. Render:
+     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars \
+       --force-device-scale-factor=2 --window-size=1600,1000 \
+       --screenshot=docs/assets/gmod-ci.png docs/assets/src/gmod-ci.html -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --ink: #0f172a; --muted: #475569; --faint: #94a3b8; --line: #e2e8f0;
+    --gate: #0f172a; --review: #4f46e5; --review-bg: #eef2ff;
+    --agent: #059669; --agent-bg: #ecfdf5; --ship: #16a34a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1600px; height: 1000px; background: #fff; }
+  body { font-family: -apple-system, "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif; color: var(--ink); padding: 60px 80px; position: relative; }
+  .kicker { font-size: 17px; font-weight: 700; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
+  h1 { font-size: 56px; line-height: 1.08; font-weight: 800; letter-spacing: -.025em; margin-top: 12px; }
+  h1 span { color: var(--agent); }
+
+  .row { display: grid; grid-template-columns: 210px 56px 1fr 56px 1fr 56px 210px; align-items: stretch; margin-top: 46px; }
+  .arrow { display: flex; align-items: center; justify-content: center; color: var(--faint); }
+  .arrow svg { width: 34px; height: 34px; }
+  .pill { border-radius: 20px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 20px; font-weight: 800; font-size: 25px; }
+  .pr { border: 2px dashed #cbd5e1; color: var(--ink); }
+  .pr small, .main small { display: block; font-size: 16px; font-weight: 600; color: var(--muted); margin-top: 6px; }
+  .main { background: var(--ship); color: #fff; }
+  .main small { color: #dcfce7; }
+
+  .card { border-radius: 22px; padding: 26px 28px; border: 2px solid; }
+  .gate { background: var(--gate); border-color: var(--gate); color: #fff; }
+  .review { background: var(--review-bg); border-color: #a5b4fc; }
+  .num { display: inline-flex; width: 34px; height: 34px; border-radius: 50%; align-items: center; justify-content: center; font-weight: 800; font-size: 18px; margin-right: 10px; vertical-align: 3px; }
+  .gate .num { background: #fff; color: var(--gate); }
+  .review .num { background: var(--review); color: #fff; }
+  .agents .num { background: var(--agent); color: #fff; }
+  .name { font-size: 32px; font-weight: 800; }
+  .badges { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .b { font-size: 15px; font-weight: 700; padding: 5px 12px; border-radius: 999px; }
+  .gate .b { background: #1e293b; color: #e2e8f0; }
+  .gate .b.on { background: #22c55e; color: #052e16; }
+  .review .b { background: #e0e7ff; color: #3730a3; }
+  .agents .b { background: #d1fae5; color: #065f46; }
+  .desc { font-size: 19.5px; line-height: 1.45; margin-top: 14px; }
+  .gate .desc { color: #cbd5e1; }
+  .review .desc, .agents .desc { color: #334155; }
+
+  .agentrow { display: grid; grid-template-columns: 266px 1fr; margin-top: 30px; }
+  .up { position: relative; color: var(--agent); font-size: 16px; font-weight: 700; }
+  .up svg { position: absolute; left: 0; top: 0; width: 266px; height: 100%; overflow: visible; }
+  .up span { position: absolute; left: 118px; top: 22%; width: 130px; line-height: 1.3; }
+  .agents { background: var(--agent-bg); border-color: #6ee7b7; display: flex; gap: 36px; align-items: center; }
+  .agents .left { flex: 0 0 470px; }
+  .loop { flex: 1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .loop div { background: #fff; border: 2px solid #a7f3d0; border-radius: 16px; padding: 14px 16px; font-size: 17.5px; line-height: 1.35; color: #334155; }
+  .loop b { display: block; color: #065f46; font-size: 18.5px; margin-bottom: 4px; }
+
+  .presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 34px; padding-top: 28px; border-top: 2px solid var(--line); }
+  .preset { border: 2px solid var(--line); border-radius: 18px; padding: 20px 22px; }
+  .preset.def { border-color: #a5b4fc; }
+  .ptitle { font-size: 22px; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+  .ptitle em { font-style: normal; font-size: 13px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--review); background: #e0e7ff; padding: 3px 9px; border-radius: 999px; }
+  .ticks { margin-top: 10px; font-size: 17px; color: var(--muted); display: flex; gap: 16px; }
+  .ticks .y { color: var(--ink); font-weight: 700; }
+  .ticks .n { color: #cbd5e1; text-decoration: line-through; }
+  .note { margin-top: 10px; font-size: 15.5px; color: var(--muted); }
+  code { display: block; margin-top: 12px; font-family: "SF Mono", Menlo, monospace; font-size: 16.5px; background: #f1f5f9; border-radius: 10px; padding: 10px 12px; color: var(--ink); }
+</style>
+</head>
+<body>
+  <div class="kicker">gmod · what CI does</div>
+  <h1>Every pull request is proven. <span>Agents are optional.</span></h1>
+
+  <div class="row">
+    <div class="pill pr">Pull request<small>yours or an agent's</small></div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    <div class="card gate">
+      <div class="name"><span class="num">1</span>Gate</div>
+      <div class="badges"><span class="b on">always on</span><span class="b">no AI</span></div>
+      <div class="desc">Runs the job's test again: it must fail without the change and pass with it. Only the job's files, main still protected.</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    <div class="card review">
+      <div class="name"><span class="num">2</span>Review</div>
+      <div class="badges"><span class="b">optional</span><span class="b">Claude or any OpenAI-compatible model</span></div>
+      <div class="desc">An AI reads the change: are the tests real, is anything weakened? It judges, never writes.</div>
+    </div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    <div class="pill main">Lands on main<small>by itself, on green</small></div>
+  </div>
+
+  <div class="agentrow">
+    <div class="up"><svg viewBox="0 0 266 270" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M306 135H105V-28"/><path d="M93 -16l12-14 12 14"/></svg><span>opens pull requests</span></div>
+    <div class="card agents">
+      <div class="left">
+        <div class="name"><span class="num">3</span>Agents</div>
+        <div class="badges"><span class="b">optional</span><span class="b">Claude Code</span><span class="b">Anthropic API key</span></div>
+        <div class="desc">Claude works the plan in CI. Its pull requests pass the same gate and review as yours.</div>
+      </div>
+      <div class="loop">
+        <div><b>Builds</b>takes each ready job, proves it, opens its pull request</div>
+        <div><b>Fixes</b>its own pull request when a check fails, twice at most</div>
+        <div><b>Listens</b>does what you ask in an <span style="font-family:SF Mono,Menlo,monospace">@gmod</span> comment</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="presets">
+    <div class="preset">
+      <div class="ptitle">Gate only</div>
+      <div class="ticks"><span class="y">✓ gate</span><span class="n">review</span><span class="n">agents</span></div>
+      <code>gmod setup --reviewer none</code>
+      <div class="note">no keys</div>
+    </div>
+    <div class="preset def">
+      <div class="ptitle">Gate + review <em>default</em></div>
+      <div class="ticks"><span class="y">✓ gate</span><span class="y">✓ review</span><span class="n">agents</span></div>
+      <code>gmod setup</code>
+      <div class="note">+ the reviewer's key, or a model you host</div>
+    </div>
+    <div class="preset">
+      <div class="ptitle">Full auto</div>
+      <div class="ticks"><span class="y">✓ gate</span><span class="y">✓ review</span><span class="y">✓ agents</span></div>
+      <code>gmod setup --agents 1</code>
+      <div class="note">+ an Anthropic API key as GMOD_AGENT_KEY</div>
+    </div>
+  </div>
+</body>
+</html>

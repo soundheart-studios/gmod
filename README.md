@@ -35,13 +35,11 @@ That's it. Every job lands by itself once it's proven. Do the work with Claude (
 
 ## What CI does
 
-| | What it does | Model | On? |
-|---|---|---|---|
-| **1. Gate** | Proves every pull request again: the job's test fails without the change and passes with it, the change stays in the job's files, and `main` stays protected. Green work lands by itself. | none, plain code | always |
-| **2. Review** | An AI reads the change: are the tests real, is anything weakened? It judges; it never writes code. | Claude, or any OpenAI-compatible model (DeepSeek, one you host) | your choice |
-| **3. Agents** | Claude Code picks up ready jobs, writes and proves the code, and opens the pull request. It also fixes its own failed checks and does what you ask with `@gmod`. | Claude, on an Anthropic API key | off unless you turn it on |
+![What CI does: 1. the gate, always on and with no AI, proves every pull request again; 2. the review, optional, has Claude or any OpenAI-compatible model judge the change; then it lands on main by itself. 3. Agents, optional, are Claude Code on an Anthropic API key: they build ready jobs, fix their own failed checks and answer @gmod, and their pull requests pass the same gate and review](docs/assets/gmod-ci.png)
 
-Nothing lands without passing the gate, whoever wrote it, you or an agent. Agents' pull requests get the same gate and review as yours.
+1. **Gate**, always on, no AI: the job's test fails without the change and passes with it, only the job's files changed, and `main` stays protected.
+2. **Review**, optional: Claude, or any OpenAI-compatible model (DeepSeek, one you host), judges the change. It never writes code.
+3. **Agents**, optional: Claude Code works the plan in CI, on an Anthropic API key. Its pull requests pass the same gate and review as yours.
 
 | You want | Run |
 |---|---|
