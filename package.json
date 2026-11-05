@@ -7,7 +7,7 @@
     "gmod": "bin/gmod.mjs"
   },
   "scripts": {
-    "test": "node --test test/cli.test.mjs test/ci.test.mjs test/receive.test.mjs test/review.test.mjs test/setup.test.mjs"
+    "test": "node --test test/cli.test.mjs test/ci.test.mjs test/receive.test.mjs test/review.test.mjs test/setup.test.mjs test/gitlab.test.mjs"
   },
   "engines": {
     "node": ">=20"

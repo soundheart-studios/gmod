@@ -1,0 +1,90 @@
+spec:
+  component: [reference]
+  inputs:
+    reviewer-url:
+      description: An OpenAI-compatible API for the AI review (DeepSeek, OpenRouter, your own). Empty for Claude (the ANTHROPIC_API_KEY variable).
+      default: ''
+    reviewer-model:
+      description: The reviewer's model, e.g. deepseek-flash.
+      default: ''
+    review:
+      description: A failed review stops the merge (blocking), only comments (advice), or there is none (off).
+      options: [blocking, advice, 'off']
+      default: blocking
+    setup:
+      description: A command that installs the project's dependencies before checks run, e.g. "npm ci".
+      default: ''
+    image:
+      description: The image gmod's jobs run in. It needs node 22 and git, and whatever the project's own checks need.
+      default: node:22
+    stage:
+      description: The stage gmod's merge request jobs run in.
+      default: test
+    gmod:
+      description: The project gmod itself is fetched from.
+      default: soundheart-studios/gmod
+---
+# gmod on GitLab. Variables it reads from the project:
+#   GMOD_GITLAB_TOKEN  a person's access token (api, write_repository): to
+#                      comment, read main's protection, set merge requests to
+#                      land, and catch job branches up (a job token can't).
+#   GMOD_REVIEW_KEY    the reviewer's key (or ANTHROPIC_API_KEY for Claude).
+
+.gmod-job:
+  image: $[[ inputs.image ]]
+  variables:
+    GIT_DEPTH: "0"
+    GMOD_HOME: /tmp/gmod
+    GMOD_REF: $[[ component.reference ]]
+    GMOD_PROJECT: $[[ inputs.gmod ]]
+    GMOD_SETUP: $[[ inputs.setup ]]
+    GMOD_REVIEW: $[[ inputs.review ]]
+    GMOD_REVIEW_URL: $[[ inputs.reviewer-url ]]
+    GMOD_REVIEW_MODEL: $[[ inputs.reviewer-model ]]
+  before_script:
+    - |
+      if [ -n "$GMOD_GITLAB_TOKEN" ]; then cred="oauth2:$GMOD_GITLAB_TOKEN"; else cred="gitlab-ci-token:$CI_JOB_TOKEN"; fi
+      git init -q "$GMOD_HOME"
+      git -C "$GMOD_HOME" fetch -q --depth 1 "https://$cred@$CI_SERVER_HOST/$GMOD_PROJECT.git" "$GMOD_REF"
+      git -C "$GMOD_HOME" checkout -q FETCH_HEAD
+    - if [ -n "$GMOD_SETUP" ]; then sh -c "$GMOD_SETUP"; fi
+
+gmod-gate:
+  extends: .gmod-job
+  stage: $[[ inputs.stage ]]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - node "$GMOD_HOME/ci/gitlab.mjs" gate
+
+gmod-review:
+  extends: .gmod-job
+  stage: $[[ inputs.stage ]]
+  needs: [gmod-gate]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - node "$GMOD_HOME/ci/gitlab.mjs" review
+
+# Sets the merge request to merge once its whole pipeline has passed: gmod's
+# own branches only. One behind main takes main in instead, and its new
+# pipeline decides.
+gmod-land:
+  extends: .gmod-job
+  stage: $[[ inputs.stage ]]
+  needs: [gmod-gate, gmod-review]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME =~ /^gmod\//
+  script:
+    - node "$GMOD_HOME/ci/gitlab.mjs" land
+
+# After something lands on main, and hourly (a pipeline schedule): claims let
+# go, the tripwire, other job branches catch up, what isn't landing.
+gmod-after:
+  extends: .gmod-job
+  stage: $[[ inputs.stage ]]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  script:
+    - node "$GMOD_HOME/ci/gitlab.mjs" after
