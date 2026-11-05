@@ -26,6 +26,25 @@ It protects `main`, writes the CI file and `.gmod/protect.json`, and lands them 
 
 Afterwards, `gmod doctor` checks everything is still in place (each ✗ comes with its fix), and `gmod ci upgrade` opens a pull request that moves the pinned gmod to the newest release.
 
+## Two ways to run gmod in CI
+
+| | **Checks only** (the default) | **Checks and agents** |
+|---|---|---|
+| What CI does | Gates and reviews every pull request, lands it on green, keeps job branches current, opens issues for what's stuck | All of that, and agents take ready jobs, fix their own failed checks, and answer `@gmod` |
+| Who writes the code | You, with Claude on your machine (`/gmod:work`) | Agents in CI, or you; jobs are claimed through git, so never both |
+| Models in CI | The reviewer only: any OpenAI-compatible endpoint (DeepSeek, OpenRouter, a model you host), Claude through an API key, or none. The gate needs no model. | The reviewer, and Claude Code running headless |
+| Keys | The reviewer's (`GMOD_REVIEW_KEY`, or `ANTHROPIC_API_KEY` for Claude); none for a model on your runner | Also `GMOD_AGENT_KEY`: an **Anthropic API key** from console.anthropic.com, billed per use |
+| Set up with | `gmod setup` | `gmod setup --agents 1` |
+
+Claude sign-in tokens (`claude setup-token`, `sk-ant-oat…`) are never used in CI: `gmod ci secret` won't store one as `GMOD_AGENT_KEY`, and the action and GitLab jobs run no agents on one. Your Claude sign-in is for Claude Code on your machine.
+
+How you control agents in CI:
+
+- **How many:** `agents: <n>` in the CI file, at most that many at once. `0`, or no `agent-key`, turns them off; so does deleting the `GMOD_AGENT_KEY` secret.
+- **What they may do:** only ready jobs of the plan you approved, only in each job's files, and only with red-then-green proof. Their pull requests go through the same gate and review as yours.
+- **When they stop:** two tries to fix failed checks, then a **gmod stuck** issue; no agent takes that job until you close it.
+- **Looking first:** the `gmod-hold` label keeps an agent's pull request open, checked but not landed, until you take it off. `@gmod <request>` on it, from someone who can write to the repository, has an agent make the change (GitHub and Gitea).
+
 ## A GitHub App
 
 By default gmod acts with CI's own token on GitHub. That works, but GitHub then leaves empty, red runs behind the pull requests agents open ([why](notes/ci-token-ghost-runs.md)), and everything shows as `github-actions`. With an App, gmod and its agents act as the App:

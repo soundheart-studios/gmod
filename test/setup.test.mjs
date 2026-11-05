@@ -76,3 +76,16 @@ test('agents in CI: the key from a secret, and how many at once', () => {
   assert.doesNotMatch(actionWorkflow({ ref: 'v1.1.0', reviewer: { kind: 'none' } }), /agent-key/);
   assert.match(actionWorkflow({ ref: 'v1.1.0', forge: 'gitea', action: 'a/gmod', reviewer: { kind: 'none' }, agents: 2 }), /agent-key: \$\{\{ secrets\.GMOD_AGENT_KEY \}\}/, 'Gitea too');
 });
+
+test('agents in CI run on an API key, never on a Claude sign-in token', async () => {
+  const agents = await import('../lib/agent.mjs');
+  assert.deepEqual(agents.agentAuth('sk-ant-api03-x'), { ANTHROPIC_API_KEY: 'sk-ant-api03-x' });
+  assert.equal(agents.isSignInToken('sk-ant-oat01-x'), true);
+  assert.equal(agents.isSignInToken(' sk-ant-oat01-x\n'), true);
+  assert.equal(agents.isSignInToken('sk-ant-api03-x'), false);
+  const r = agents.runAgent({ root: '/nonexistent', home: '/nonexistent', key: 'sk-ant-oat01-x' });
+  assert.equal(r.ok, false);
+  assert.match(r.said, /API key/);
+  const { setSecret } = await import('../lib/ci.mjs');
+  await assert.rejects(setSecret('/nonexistent', { name: 'GMOD_AGENT_KEY', value: 'sk-ant-oat01-x', forge: { kind: 'github', owner: 'o', repo: 'r' } }), /sign-in token/);
+});

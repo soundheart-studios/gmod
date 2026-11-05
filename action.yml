@@ -23,7 +23,7 @@ inputs:
     description: The token gmod comments, reports checks and merges with.
     default: ${{ github.token }}
   agent-key:
-    description: A Claude Code sign-in token or an Anthropic API key. With it, agents in CI take ready jobs after each landing and hourly. Leave empty for no agents in CI.
+    description: An Anthropic API key (sk-ant-api…). With it, agents in CI take ready jobs after each landing and hourly. Claude sign-in tokens (sk-ant-oat…) are refused. Leave empty for checks only, with no agents in CI.
     default: ''
   agents:
     description: At most this many agents work at once.

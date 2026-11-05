@@ -31,7 +31,7 @@ Claude drafts the plan and you approve it. Then connect your CI:
 /gmod:ci
 ```
 
-That's it. Every job lands by itself once it's proven. Do the work with Claude (`/gmod:work`), or let agents in CI take each job as the one before it lands.
+That's it. Every job lands by itself once it's proven. Do the work with Claude (`/gmod:work`), or let agents in CI take each job as the one before it lands. CI can [only check, or check and run agents](docs/setup.md#two-ways-to-run-gmod-in-ci): checks need just a reviewer (any OpenAI-compatible model, or none); agents need an Anthropic API key.
 
 ## Why gmod
 

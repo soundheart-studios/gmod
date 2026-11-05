@@ -83,8 +83,8 @@ const sleep = ms => new Promise(ok => setTimeout(ok, ms));
     if (!have.split('\n').includes(line)) appendFileSync(exclude, `${have && !have.endsWith('\n') ? '\n' : ''}${line}\n`);
   }
 }
-// An agent key: a Claude Code sign-in token (sk-ant-oat…) or an API key.
-const agentKey = process.env.GMOD_AGENT_KEY || '';
+// An agent key: an Anthropic API key. A sign-in token is refused: no agents.
+const agentKey = agents.isSignInToken(process.env.GMOD_AGENT_KEY) ? (console.log(`gmod: ${agents.SIGN_IN_TOKEN}; no agents run`), '') : process.env.GMOD_AGENT_KEY || '';
 const AGENTS = Math.max(0, Number(process.env.GMOD_AGENTS || 1));
 
 async function gh(method, path, body, as = token) {

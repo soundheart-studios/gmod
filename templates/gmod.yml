@@ -36,8 +36,8 @@ spec:
 #                      comment, read main's protection, set merge requests to
 #                      land, and catch job branches up (a job token can't).
 #   GMOD_REVIEW_KEY    the reviewer's key (or ANTHROPIC_API_KEY for Claude).
-#   GMOD_AGENT_KEY     with agents > 0: a Claude Code sign-in token or an
-#                      Anthropic API key, for agents in CI.
+#   GMOD_AGENT_KEY     with agents > 0: an Anthropic API key (sk-ant-api…),
+#                      for agents in CI. Claude sign-in tokens are refused.
 
 .gmod-job:
   image: $[[ inputs.image ]]

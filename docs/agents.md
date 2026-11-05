@@ -12,7 +12,7 @@ Either way the work ends the same: a pull request, the gate, the review, and a m
 
 ## Agents in CI
 
-Turn them on with `gmod setup --agents 1` and a key, kept as the `GMOD_AGENT_KEY` secret: an Anthropic API key, or a Claude Code sign-in token from `claude setup-token`. The workflow gains two lines:
+Turn them on with `gmod setup --agents 1` and an Anthropic API key from [console.anthropic.com](https://console.anthropic.com), kept as the `GMOD_AGENT_KEY` secret. It is billed to that Console account, per use. A Claude sign-in token (`claude setup-token`, `sk-ant-oat…`) is refused: gmod never runs unattended on a person's subscription. The workflow gains two lines:
 
 ```yaml
           agent-key: ${{ secrets.GMOD_AGENT_KEY }}

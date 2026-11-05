@@ -23,7 +23,7 @@ description: Put gmod into a repository's CI (GitHub, GitLab or Gitea) - the gat
 
 1. **The reviewer:** Claude (an `ANTHROPIC_API_KEY` secret), any OpenAI-compatible API such as DeepSeek (`--reviewer-url`, `--reviewer-model`, its key as `GMOD_REVIEW_KEY`), a model on the runner itself (its URL, e.g. `http://127.0.0.1:8080/v1`, no key), or none.
 2. **Blocking or advice?** Blocking (the default): a "fail", or a reviewer that can't answer, stops the merge; a maintainer overrules with the `gmod-override` label. `--advice`: it only comments.
-3. **Agents in CI?** (GitHub) `--agents <n>`: after each landing, agents take the jobs it made ready, at most `n` at once. Needs a `GMOD_AGENT_KEY` secret: an Anthropic API key, or a token from `claude setup-token`.
+3. **Agents in CI?** (GitHub) `--agents <n>`: after each landing, agents take the jobs it made ready, at most `n` at once. Needs a `GMOD_AGENT_KEY` secret: an Anthropic API key from console.anthropic.com. Never a Claude sign-in token (`claude setup-token`): gmod refuses one. Without agents, CI only checks, and the work happens on the person's machine.
 4. **Gitea only, the runner:** an existing runner's label (`--runs-on <label>`), or start one with `runner up` (`DOCKER_HOST=ssh://user@host` for another machine). Starting a runner runs software on their machine: say so first.
 
 Project dependencies the checks need go in `--setup '<commands>'` (e.g. `npm ci`).

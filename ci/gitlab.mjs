@@ -22,6 +22,8 @@ import { JOB } from '../lib/gitlab.mjs';
 import * as agents from '../lib/agent.mjs';
 
 const env = process.env;
+// An agent key: an Anthropic API key. A sign-in token is refused: no agents.
+const agentKey = agents.isSignInToken(env.GMOD_AGENT_KEY) ? (console.log(`gmod: ${agents.SIGN_IN_TOKEN}; no agents run`), '') : env.GMOD_AGENT_KEY || '';
 const home = env.GMOD_HOME;
 const token = env.GMOD_GITLAB_TOKEN;
 const api = `${env.CI_API_V4_URL}/projects/${env.CI_PROJECT_ID}`;
@@ -139,7 +141,7 @@ if (what === 'fix') {
   const job = (env.CI_MERGE_REQUEST_SOURCE_BRANCH_NAME || '').replace(/^gmod\//, '');
   const root = core.repoRoot(env.CI_PROJECT_DIR || process.cwd());
   core.syncClaims(root);
-  if (Number(env.GMOD_AGENTS || 0) < 1 || core.claims(root)[job]?.by !== agents.AGENT.email) {
+  if (!agentKey || Number(env.GMOD_AGENTS || 0) < 1 || core.claims(root)[job]?.by !== agents.AGENT.email) {
     console.log(`gmod: !${iid} isn't an agent's job (or agents are off); a person fixes it`);
     process.exit(0);
   }
@@ -155,7 +157,7 @@ if (what === 'fix') {
   const reports = list.filter(n => /^<!-- gmod-(gate|review) -->/.test(n.body ?? '')).map(n => n.body.replace(/^<!-- [^>]+ -->\n/, ''));
   git(['checkout', '-q', '--detach', env.CI_COMMIT_SHA]);
   const before = (await call('GET', `/merge_requests/${iid}`)).json?.sha;
-  const r = agents.runAgent({ root, home, key: env.GMOD_AGENT_KEY, version: env.GMOD_CLAUDE_VERSION || 'latest', env: { GITLAB_TOKEN: token, GMOD_TOKEN: token }, prompt: agents.fixPrompt({ job, number: iid, reports }) });
+  const r = agents.runAgent({ root, home, key: agentKey, version: env.GMOD_CLAUDE_VERSION || 'latest', env: { GITLAB_TOKEN: token, GMOD_TOKEN: token }, prompt: agents.fixPrompt({ job, number: iid, reports }) });
   const after = (await call('GET', `/merge_requests/${iid}`)).json?.sha;
   if (after && after !== before) console.log(`gmod: the agent pushed a fix to !${iid}; its new pipeline decides`);
   else await call('POST', `/merge_requests/${iid}/notes`, { body: `gmod: the agent couldn't fix it:\n\n> ${r.said.split('\n').slice(-6).join('\n> ') || '(it said nothing)'}` });
@@ -309,7 +311,7 @@ for (const [job, number] of filed) {
 
 // ---- 4. agents in CI: one ready job, in this job ----
 const AGENTS = Number(env.GMOD_AGENTS || 0);
-if (env.GMOD_AGENT_KEY && AGENTS > 0) {
+if (agentKey && AGENTS > 0) {
   const plan = core.planFromDisk(root);
   for (const id of agents.staleAgentClaims(root, new Set(jobMrs.map(m => m.source_branch)))) {
     run('bin/gmod.mjs', ['release', id]);
@@ -320,7 +322,7 @@ if (env.GMOD_AGENT_KEY && AGENTS > 0) {
   console.log(`agents: ${ready.length} job(s) ready, ${held} with agents`);
   if (ready.length && held < AGENTS) {
     git(['checkout', '-q', '--detach', sha]);
-    const r = agents.runAgent({ root, home, key: env.GMOD_AGENT_KEY, version: env.GMOD_CLAUDE_VERSION || 'latest', env: { GITLAB_TOKEN: token, GMOD_TOKEN: token } });
+    const r = agents.runAgent({ root, home, key: agentKey, version: env.GMOD_CLAUDE_VERSION || 'latest', env: { GITLAB_TOKEN: token, GMOD_TOKEN: token } });
     const open2 = await call('GET', '/merge_requests?state=opened&per_page=100');
     for (const job of r.claimed) {
       const mr = (open2.ok ? open2.json ?? [] : []).find(m => m.source_branch === `gmod/${job}`);

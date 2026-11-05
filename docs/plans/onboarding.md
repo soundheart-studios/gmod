@@ -87,11 +87,11 @@ Found while setting up the test bed: on a personal account without Pro, a privat
 - Gitea (v1.2.0, demo): the first agent's tag-index (#18) carried gmod's own checkout (.gmod-tool) and the gate refused it; git now ignores that folder. The agent's hold outlived the closed pull request; holds now go after an hour without one. The hourly run let it go, a fresh agent did tag-index (#19), and it landed.
 - 1.3.0 on gmod-test-gh: the gmod App opens and lands agents' pull requests, with no empty runs left behind (#26). `gmod-hold` kept #28 open while green; `@gmod also drop empty or whitespace-only sentences, and add a test for it` made an agent push a test; removing the label landed it. A failed gate on #30 (a deliberate off-by-one) sent an agent that fixed it; the gate still refused the branch for carrying a person's commit on the agent's claim, the second try changed nothing, and the job was reported stuck (#31), as designed.
 - Not yet proven live: the fixer and `@gmod` on Gitea, `gmod-fix` on GitLab.
-- **image-claude:** Claude Code and the gmod plugin in the runner image. It signs in from an `agent-key` input (`CLAUDE_CODE_OAUTH_TOKEN` or an API key).
+- **image-claude:** Claude Code and the gmod plugin in the runner image. It signs in from an `agent-key` input: an Anthropic API key.
 - **agent-job:** the action starts an agent when a merge makes jobs ready, when a job's checks fail, or on `@gmod`. It runs headless, `claude -p "/gmod:work"`, with at most `agents` at once and a few tries per job, then reports the job stuck.
 - **agent-identity:** commits and pull requests from CI agents under a bot account or GitHub App, not the person's login.
   - Done when: on the test repository, merging one job makes CI's agent take the next, prove it, and land it, with nobody at a keyboard.
-- **open question:** whether a subscription sign-in may run unattended in CI. Check Anthropic's current terms; an API key avoids the question.
+- **decided (1.3.1):** agents in CI run on an Anthropic API key only. Claude sign-in tokens are refused by `gmod ci secret`, the action and the GitLab jobs; gtrader's token was removed from CI.
 
 ## What I need from you
 
