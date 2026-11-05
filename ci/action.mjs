@@ -88,13 +88,23 @@ const agentKey = process.env.GMOD_AGENT_KEY || '';
 const AGENTS = Math.max(0, Number(process.env.GMOD_AGENTS || 1));
 
 async function gh(method, path, body, as = token) {
-  const res = await fetch(`${api}/repos/${repo}${path}`, {
+  const send = () => fetch(`${api}/repos/${repo}${path}`, {
     method,
     headers: gitea
       ? { authorization: `token ${as}`, accept: 'application/json', 'content-type': 'application/json' }
       : { authorization: `Bearer ${as}`, accept: 'application/vnd.github+json', 'content-type': 'application/json', 'x-github-api-version': '2022-11-28' },
     body: body ? JSON.stringify(body) : undefined,
   });
+  // A dropped connection ("other side closed") is tried again, twice, before
+  // it fails the run; an answer from the forge, even an error, is final.
+  let res;
+  for (let i = 0; ; i++) {
+    try { res = await send(); break; } catch (e) {
+      if (i >= 2) throw e;
+      console.log(`gmod: ${method} ${path} dropped (${e.cause?.code ?? e.message}); trying again`);
+      await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+    }
+  }
   const text = await res.text();
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { json = { text }; }
