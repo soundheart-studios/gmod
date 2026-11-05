@@ -151,6 +151,22 @@ const jobsOf = async pipelineId => {
   return latest;
 };
 
+// Every finished job's checks, run on main as it is: the names that fail.
+function checkMain(root, ref) {
+  const plan = core.planAt(root, ref);
+  if (!plan) return [];
+  const done = core.doneJobs(root, ref);
+  const names = new Set(plan.jobs.filter(j => done.has(j.id)).flatMap(j => (j.done_when ?? []).map(d => d.check)));
+  const failing = [];
+  for (const name of names) {
+    const cmd = plan.checks?.[name];
+    if (!cmd) continue;
+    const r = spawnSync('sh', ['-c', cmd], { cwd: root, stdio: 'inherit' });
+    if (r.status !== 0) failing.push(name);
+  }
+  return failing;
+}
+
 // ---- 1. the tripwire ----
 const parent = core.git(['rev-parse', '--verify', '-q', `${sha}^1`], { cwd: root, allow: true }).out;
 const spec = parent ? core.protectSpec(root, parent) : null;
@@ -171,6 +187,17 @@ if (scheduled) {
     for (const need of spec.require) {
       const state = jobs.get(JOB[need]) ?? 'missing';
       if (state !== 'success') breaches.push(`!${mr.iid} merged with its ${need} ${state === 'missing' ? 'never run' : state}`);
+    }
+    // Up to date? GitLab can run two auto-merges at the same moment, and
+    // then semi-linear history doesn't stop the second: it lands on a main
+    // its pipeline never saw. Then main itself is checked, as merged: every
+    // finished job's checks.
+    git(['fetch', '-q', 'origin', `+refs/merge-requests/${mr.iid}/head:refs/gmod/landed`]);
+    const before = core.git(['rev-parse', '--verify', '-q', `${sha}^1`], { cwd: root, allow: true }).out;
+    if (spec.up_to_date && before && mr.sha !== sha && !git(['merge-base', '--is-ancestor', before, mr.sha]).ok) {
+      const failing = checkMain(root, sha);
+      if (failing.length) breaches.push(`!${mr.iid} landed on a main its pipeline never saw, and main now fails: ${failing.join(', ')}`);
+      else console.log(`after-merge: !${mr.iid} landed on a main its pipeline never saw (GitLab merged two at once); main as merged passes every finished job's checks`);
     }
   }
   if (breaches.length) {
