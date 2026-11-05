@@ -48,3 +48,4 @@ That's it. Every job lands by itself once it's proven. Do the work with Claude (
 - [Commands](docs/commands.md)
 - [Limits, honestly](docs/limits.md)
 - [Reference: how it works inside](docs/reference.md)
+- [Notes for later](docs/notes/)
