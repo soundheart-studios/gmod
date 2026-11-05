@@ -141,14 +141,16 @@ async function openFinished(root) {
   git('fetch', '-q', 'origin', '+refs/heads/*:refs/remotes/origin/*');
   const plan = core.planFromDisk(root);
   if (!plan) return false;
-  const open = await gh('GET', gitea ? '/pulls?state=open&limit=50' : '/pulls?state=open&per_page=100');
-  const opened = new Set((open.ok ? open.json ?? [] : []).map(p => p.head?.ref));
+  // Any pull request at all, open or closed: a closed one was a person's no,
+  // and its work isn't reopened behind their back.
+  const all = await gh('GET', gitea ? '/pulls?state=all&limit=50' : '/pulls?state=all&per_page=100');
+  const opened = new Set((all.ok ? all.json ?? [] : []).map(p => p.head?.ref));
   for (const j of agents.readyJobs(root, plan)) {
     const branch = `gmod/${j.id}`;
     if (opened.has(branch)) continue;
     const subjects = core.git(['log', '--format=%s', `origin/${plan.main ?? 'main'}..origin/${branch}`], { cwd: root, allow: true });
     if (!subjects.ok || !subjects.out.split('\n').some(x => x.startsWith(`${j.id}:`))) continue;
-    if (run('bin/gmod.mjs', ['claim', j.id]) !== 0) continue;
+    if (run('bin/gmod.mjs', ['claim', j.id, '--resume']) !== 0) continue;
     const pr = spawnSync('node', [join(home, 'bin/gmod.mjs'), 'pr', '--auto', '--json'], { encoding: 'utf8', env: { ...process.env, ...prEnv() } });
     const url = (pr.stdout || '').match(/"url":\s*"([^"]+)"/)?.[1];
     const number = Number(url?.match(/(\d+)$/)?.[1]);

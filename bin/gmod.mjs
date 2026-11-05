@@ -104,7 +104,7 @@ function parse(argv) {
     const a = argv[i];
     if (!a.startsWith('--')) rest.push(a);
     else if (a === '--version') rest.unshift('version');
-    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr', '--advice', '--no-wait', '--candidates'].includes(a)) flags[a.slice(2)] = true;
+    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr', '--advice', '--no-wait', '--candidates', '--resume'].includes(a)) flags[a.slice(2)] = true;
     else if (a === '--trailer') (flags.trailer ??= []).push(argv[++i]);
     else flags[a.slice(2)] = argv[++i];
   }
@@ -233,7 +233,7 @@ async function main() {
     }
     case 'claim': {
       if (!args[0]) throw new core.GmodError('which job? gmod claim <job>');
-      const r = core.claim(root, args[0], { branch: !flags['no-branch'] });
+      const r = core.claim(root, args[0], { branch: !flags['no-branch'], resume: !!flags.resume });
       return out(flags, r, r.again ? `you already hold ${r.job}` : `claimed ${r.job} as ${r.by}${r.note ? `; ${r.note}` : ''}`);
     }
     case 'release': {
