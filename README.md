@@ -33,15 +33,23 @@ Claude drafts the plan and you approve it. Then connect your CI:
 
 That's it. Every job lands by itself once it's proven. Do the work with Claude (`/gmod:work`), or let agents in CI take each job as the one before it lands.
 
-## Two ways to run it in CI
+## What CI does
 
-| | **Checks only** (the default) | **Checks and agents** |
-|---|---|---|
-| CI | gates, reviews and lands every pull request | the same, and agents build the ready jobs |
-| You need | a reviewer: Claude, any OpenAI-compatible model (DeepSeek, one you host), or none | also an Anthropic API key, as the `GMOD_AGENT_KEY` secret |
-| Set up with | `gmod setup` | `gmod setup --agents 1` |
+| | What it does | Model | On? |
+|---|---|---|---|
+| **1. Gate** | Proves every pull request again: the job's test fails without the change and passes with it, the change stays in the job's files, and `main` stays protected. Green work lands by itself. | none, plain code | always |
+| **2. Review** | An AI reads the change: are the tests real, is anything weakened? It judges; it never writes code. | Claude, or any OpenAI-compatible model (DeepSeek, one you host) | your choice |
+| **3. Agents** | Claude Code picks up ready jobs, writes and proves the code, and opens the pull request. It also fixes its own failed checks and does what you ask with `@gmod`. | Claude, on an Anthropic API key | off unless you turn it on |
 
-Claude sign-in tokens are never used in CI. How to set up each, and how agents are kept in check: [setting up a repository](docs/setup.md#two-ways-to-run-gmod-in-ci).
+Nothing lands without passing the gate, whoever wrote it, you or an agent. Agents' pull requests get the same gate and review as yours.
+
+| You want | Run |
+|---|---|
+| Gate and review; you build on your machine | `gmod setup` (Claude reviews), or `gmod setup --reviewer-url <url> --reviewer-model <model>` |
+| Gate only | `gmod setup --reviewer none` |
+| All of it, agents included | `gmod setup --agents 1`, with an Anthropic API key as the `GMOD_AGENT_KEY` secret |
+
+Agents in CI always use an API key, never a person's Claude sign-in. More: [setting up a repository](docs/setup.md#what-ci-does).
 
 ## Why gmod
 

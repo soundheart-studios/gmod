@@ -26,17 +26,17 @@ It protects `main`, writes the CI file and `.gmod/protect.json`, and lands them 
 
 Afterwards, `gmod doctor` checks everything is still in place (each ✗ comes with its fix), and `gmod ci upgrade` opens a pull request that moves the pinned gmod to the newest release.
 
-## Two ways to run gmod in CI
+## What CI does
 
-| | **Checks only** (the default) | **Checks and agents** |
-|---|---|---|
-| What CI does | Gates and reviews every pull request, lands it on green, keeps job branches current, opens issues for what's stuck | All of that, and agents take ready jobs, fix their own failed checks, and answer `@gmod` |
-| Who writes the code | You, with Claude on your machine (`/gmod:work`) | Agents in CI, or you; jobs are claimed through git, so never both |
-| Models in CI | The reviewer only: any OpenAI-compatible endpoint (DeepSeek, OpenRouter, a model you host), Claude through an API key, or none. The gate needs no model. | The reviewer, and Claude Code running headless |
-| Keys | The reviewer's (`GMOD_REVIEW_KEY`, or `ANTHROPIC_API_KEY` for Claude); none for a model on your runner | Also `GMOD_AGENT_KEY`: an **Anthropic API key** from console.anthropic.com, billed per use |
-| Set up with | `gmod setup` | `gmod setup --agents 1` |
+| | What it does | Model | On? |
+|---|---|---|---|
+| **1. Gate** | Proves every pull request again: the job's test fails without the change and passes with it, only the job's files changed, the commits are by whoever claimed the job, and `main` is still protected. Green work lands by itself. | none, plain code | always |
+| **2. Review** | An AI reads the change: are the tests real, is anything weakened? It judges; it never writes code. | Claude (`ANTHROPIC_API_KEY`), any OpenAI-compatible model (`--reviewer-url`, `--reviewer-model`, key as `GMOD_REVIEW_KEY`), or one on your runner (no key) | unless `--reviewer none` |
+| **3. Agents** | Claude Code, headless, picks up ready jobs, writes and proves the code, and opens the pull request; fixes its own failed checks; does what a maintainer asks with `@gmod`. | Claude, on an Anthropic API key (`GMOD_AGENT_KEY`, from console.anthropic.com, billed per use) | only with `--agents <n>` |
 
-Claude sign-in tokens (`claude setup-token`, `sk-ant-oat…`) are never used in CI: `gmod ci secret` won't store one as `GMOD_AGENT_KEY`, and the action and GitLab jobs run no agents on one. Your Claude sign-in is for Claude Code on your machine.
+Nothing lands without passing the gate, whoever wrote it. Agents' pull requests get the same gate and review as a person's. Without agents, the work happens on your machine with `/gmod:work`, on your own Claude login.
+
+Claude sign-in tokens (`claude setup-token`, `sk-ant-oat…`) are never used in CI: `gmod ci secret` won't store one as `GMOD_AGENT_KEY`, and the action and GitLab jobs run no agents on one.
 
 How you control agents in CI:
 
