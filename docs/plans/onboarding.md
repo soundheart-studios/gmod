@@ -64,9 +64,12 @@ Found while setting up the test bed: on a personal account without Pro, a privat
 - **upgrade:** `gmod ci upgrade` opens a pull request that bumps the pinned version.
   - Done when: on a fresh repository, `gmod setup` then `/gmod:work` lands a job with no other command.
 
-### 5 · GitLab
-- **gitlab-component:** a CI/CD component (published from a GitLab mirror), merge requests, "merge when the pipeline succeeds", merge trains, and protected branches through `glab`.
+### 5 · GitLab ✅ (v0.2.0-rc.4)
+- **gitlab-component:** a CI/CD component (`templates/gmod.yml`, from the GitLab mirror), merge requests, auto-merge once the pipeline passes, and protected branches through `glab`.
   - Done when: the same proof as phase 4, on GitLab.
+  - Proven on `gmod-test-gl`: setup landed !1 by itself; a plan (!2) and two jobs built at once (!3, !4) landed by themselves; `gmod ci upgrade` moved it to rc.4 (!5); doctor 8/8.
+  - GitLab Free has no merge trains or required named checks. main is held by: no pushes, pipelines must pass (never skipped), semi-linear merges, and gmod-gate/gmod-review as pipeline jobs.
+  - Found live: GitLab ran two auto-merges in the same second and semi-linear history didn't stop the second. After such a landing, gmod-after runs every finished job's checks on main as merged and opens a breach issue if they fail.
 
 ### 6 · Gitea and the switch
 - **runner-up:** `gmod runner up` starts the official runner in Docker, with labels and capacity.
@@ -86,5 +89,6 @@ Found while setting up the test bed: on a personal account without Pro, a privat
 - **GitHub:** done. `gh` is signed in as soundheart-studios with `repo` and `workflow` scopes.
 - **The test repository:** `soundheart-studios/gmod-test-gh` is created, and `GMOD_REVIEW_KEY` is set. The reviewer model is `deepseek-flash`.
 - **The reviewer key** for that repository: DeepSeek's key as the secret `GMOD_REVIEW_KEY`, and the flash model's exact id as the variable `GMOD_REVIEW_MODEL`. You set the key: `gh secret set GMOD_REVIEW_KEY -R soundheart-studios/gmod-test-gh`.
-- **GitHub Pro:** not on this account, so phase 3b covers it.
+- **GitHub Pro:** now on the account; rulesets protect main on private repositories (phase 3b still covers plans without it).
+- **GitLab:** `glab` signed in as soundheart-studios; `gmod-test-gl` holds GMOD_GITLAB_TOKEN and GMOD_REVIEW_KEY.
 - **Images on ghcr.io are private by default.** The test repository needs read access to the image, granted in the package's settings. That's a one-time click in the package's settings.
