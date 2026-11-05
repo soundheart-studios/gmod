@@ -74,5 +74,5 @@ test('agents in CI: the key from a secret, and how many at once', () => {
   assert.match(y, /agents: 2/);
   assert.match(y, /repository_dispatch: \{ types: \[gmod\] \}/, 'agent runs start through dispatch');
   assert.doesNotMatch(actionWorkflow({ ref: 'v1.1.0', reviewer: { kind: 'none' } }), /agent-key/);
-  assert.doesNotMatch(actionWorkflow({ ref: 'v1.1.0', forge: 'gitea', action: 'a/gmod', reviewer: { kind: 'none' }, agents: 2 }), /agent-key/, 'GitHub only for now');
+  assert.match(actionWorkflow({ ref: 'v1.1.0', forge: 'gitea', action: 'a/gmod', reviewer: { kind: 'none' }, agents: 2 }), /agent-key: \$\{\{ secrets\.GMOD_AGENT_KEY \}\}/, 'Gitea too');
 });

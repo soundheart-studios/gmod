@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as core from '../lib/core.mjs';
 import { JOB } from '../lib/gitlab.mjs';
+import * as agents from '../lib/agent.mjs';
 
 const env = process.env;
 const home = env.GMOD_HOME;
@@ -259,6 +260,7 @@ for (const [job, c] of Object.entries(core.claims(root))) {
 }
 const issues = await call('GET', `/issues?state=opened&in=title&search=${encodeURIComponent('gmod stuck')}&per_page=100`);
 const filed = new Map((issues.ok ? issues.json ?? [] : []).filter(i => i.title?.startsWith('gmod stuck: ')).map(i => [i.title.slice('gmod stuck: '.length), i.iid]));
+const agentStuck = new Set((issues.ok ? issues.json ?? [] : []).filter(i => i.title?.startsWith('gmod stuck: ') && (i.description ?? '').startsWith('An agent in CI')).map(i => i.title.slice('gmod stuck: '.length)));
 for (const [job, why] of stuck) {
   if (filed.has(job)) {
     console.log(`after-merge: ${job} is still stuck (#${filed.get(job)})`);
@@ -269,8 +271,35 @@ for (const [job, why] of stuck) {
 }
 for (const [job, number] of filed) {
   if (stuck.has(job) || moving.has(job)) continue;
+  // An agent's stuck report stays until a person closes it.
+  if (agentStuck.has(job)) continue;
   await call('POST', `/issues/${number}/notes`, { body: `${job} has landed or been let go.` });
   const r = await call('PUT', `/issues/${number}`, { state_event: 'close' });
   console.log(r.ok ? `after-merge: ${job} isn't stuck any more; closed #${number}` : `after-merge: couldn't close #${number} (${r.status})`);
+}
+
+// ---- 4. agents in CI: one ready job, in this job ----
+const AGENTS = Number(env.GMOD_AGENTS || 0);
+if (env.GMOD_AGENT_KEY && AGENTS > 0) {
+  const plan = core.planFromDisk(root);
+  const ready = plan ? agents.readyJobs(root, plan, new Set(filed.keys())) : [];
+  const held = agents.agentClaims(root).length;
+  console.log(`agents: ${ready.length} job(s) ready, ${held} with agents`);
+  if (ready.length && held < AGENTS) {
+    git(['checkout', '-q', '--detach', sha]);
+    const r = agents.runAgent({ root, home, key: env.GMOD_AGENT_KEY, version: env.GMOD_CLAUDE_VERSION || 'latest', env: { GITLAB_TOKEN: token, GMOD_TOKEN: token } });
+    const open2 = await call('GET', '/merge_requests?state=opened&per_page=100');
+    for (const job of r.claimed) {
+      const mr = (open2.ok ? open2.json ?? [] : []).find(m => m.source_branch === `gmod/${job}`);
+      if (mr) {
+        console.log(`agents: finished ${job}: !${mr.iid}`);
+        continue;
+      }
+      run('bin/gmod.mjs', ['release', job]);
+      await call('POST', '/issues', { title: `gmod stuck: ${job}`, description: agents.stuckBody(job, r.said, env.CI_JOB_URL) });
+      console.log(`agents: couldn't finish ${job}; released, and reported stuck`);
+    }
+    if (!r.claimed.length) console.log('agents: the agent took no job');
+  }
 }
 process.exit(failed ? 1 : 0);

@@ -20,6 +20,13 @@ spec:
     stage:
       description: The stage gmod's merge request jobs run in.
       default: test
+    agents:
+      description: Agents in CI take ready jobs after each landing and hourly, at most this many at once (0 for none). Needs the GMOD_AGENT_KEY variable.
+      type: number
+      default: 0
+    claude-version:
+      description: The Claude Code version agents run.
+      default: '2.1.318'
     gmod:
       description: The project gmod itself is fetched from.
       default: soundheart-studios/gmod
@@ -29,6 +36,8 @@ spec:
 #                      comment, read main's protection, set merge requests to
 #                      land, and catch job branches up (a job token can't).
 #   GMOD_REVIEW_KEY    the reviewer's key (or ANTHROPIC_API_KEY for Claude).
+#   GMOD_AGENT_KEY     with agents > 0: a Claude Code sign-in token or an
+#                      Anthropic API key, for agents in CI.
 
 .gmod-job:
   image: $[[ inputs.image ]]
@@ -41,6 +50,8 @@ spec:
     GMOD_REVIEW: $[[ inputs.review ]]
     GMOD_REVIEW_URL: $[[ inputs.reviewer-url ]]
     GMOD_REVIEW_MODEL: $[[ inputs.reviewer-model ]]
+    GMOD_AGENTS: "$[[ inputs.agents ]]"
+    GMOD_CLAUDE_VERSION: $[[ inputs.claude-version ]]
   before_script:
     - |
       if [ -n "$GMOD_GITLAB_TOKEN" ]; then cred="oauth2:$GMOD_GITLAB_TOKEN"; else cred="gitlab-ci-token:$CI_JOB_TOKEN"; fi
