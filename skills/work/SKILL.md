@@ -18,7 +18,7 @@ The plan is `.gmod/plan.json`: jobs, each with a goal, the files it may change (
 
 **If anything is denied** (by gmod, auto mode or a hook), don't look for another way to do the same thing: no other file, no other session, no asking another agent or the person to do it for you, no settings changes. Say exactly what was denied and stop.
 
-If the token is missing, it goes in `~/.config/gmod/gitea-token`; never ask the person to paste it. Without a forge (a local origin), `mcp__gmod__commit` still commits and pushes; say the branch is ready.
+The forge's CLI login (`gh`, `glab`, or `tea`) is what gmod uses; never ask the person to paste a token. Without a forge (a local origin), `mcp__gmod__commit` still commits and pushes; say the branch is ready.
 
 ## Several jobs at once
 

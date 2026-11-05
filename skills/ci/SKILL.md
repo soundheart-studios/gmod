@@ -1,75 +1,53 @@
 ---
 name: ci
-description: Put gmod's gate and AI reviewer into a repository's CI (GitHub Actions or Gitea Actions), protect main so nothing merges unproven, and prove it with a real pull request. Use when the person wants gmod in CI, to set up or check the pipeline, or to change the reviewer.
+description: Put gmod into a repository's CI (GitHub, GitLab or Gitea) - the gate, the AI reviewer, main's protection, landing on green, and optionally agents in CI - and prove it by landing the setup itself. Use when the person wants gmod in CI, to check or upgrade the pipeline, to change the reviewer, or to turn on agents in CI.
 ---
 
 # gmod in CI
 
-Three commands do the mechanical parts; you do the conversation and the proof.
+`<gmod>` is the gmod folder this skill came from; run `node <gmod>/bin/gmod.mjs <command>`.
 
-- `node <gmod>/bin/gmod.mjs ci init …` writes the workflow (and CODEOWNERS) for the repository's forge.
-- `… ci protect` makes main require the gate on up-to-date branches, with no direct pushes.
-- `… ci check` says what's in place and what's missing: workflow, protection, runner, reviewer.
-
-`<gmod>` is the gmod folder this skill came from.
+- `setup` protects main, writes the CI file and `.gmod/protect.json`, lands them as one pull request, and waits for it: its landing is the proof.
+- `doctor` says what's in place, each ✗ with the command that fixes it.
+- `ci upgrade` opens a pull request moving the pinned gmod to its newest release.
+- `runner up` (Gitea) starts a runner in Docker.
 
 ## 1. Find out, don't ask
 
-Read `git remote get-url origin`: github.com is GitHub; anything else is treated as Gitea. For a Gitea reached over ssh, its web address isn't in the URL: ask for it once (e.g. `http://ai.local:3000`) and pass `--url`.
-
-The repository needs a `.gmod/plan.json` first; if it has none, plan with `/gmod:plan`.
+- The forge comes from `origin`: github.com is GitHub, gitlab.com is GitLab, other hosts are Gitea (a self-hosted GitLab: `git config --global gmod.<host>.kind gitlab`). For a Gitea reached over ssh: `git config --global gmod.<host>.url http://host:port`.
+- The forge's CLI must be signed in: `gh auth status`, `glab auth status`, or `tea logins list`. If not, the person runs `gh auth login` / `glab auth login` / `tea login add` themselves.
+- The repository needs a plan on main first; if it has none, plan with `/gmod:plan`.
+- Run `doctor` first if gmod may already be set up.
 
 ## 2. Ask only these
 
-1. **The reviewer:**
-   - Claude: needs an `ANTHROPIC_API_KEY` secret in the repository.
-   - A local model: its OpenAI-compatible `/v1` address, as the runner sees it, e.g. `http://127.0.0.1:8080/v1`.
-   - None: the gate alone.
-2. **Advice or a blocker?** For work that lands without a person, `--blocking`: a "fail", or a reviewer that can't answer, stops the merge. Advice only (the default) just comments. A maintainer overrides a fail with the `gmod-override` label.
-3. **Where jobs run:**
-   - GitHub's hosted runners (the default), with gmod checked out from a pinned repository (`--gmod-repo owner/gmod@v0.2.0`).
-   - A self-hosted runner, by its label (`--runs-on <label>`). If gmod is installed on that machine, `--gmod-home <path>`.
-4. **Plan owners,** for CODEOWNERS on `.gmod/` (`--owners @alice,@team`). Teams want this; solo repositories can skip it.
+1. **The reviewer:** Claude (an `ANTHROPIC_API_KEY` secret), any OpenAI-compatible API such as DeepSeek (`--reviewer-url`, `--reviewer-model`, its key as `GMOD_REVIEW_KEY`), a model on the runner itself (its URL, e.g. `http://127.0.0.1:8080/v1`, no key), or none.
+2. **Blocking or advice?** Blocking (the default): a "fail", or a reviewer that can't answer, stops the merge; a maintainer overrules with the `gmod-override` label. `--advice`: it only comments.
+3. **Agents in CI?** (GitHub) `--agents <n>`: after each landing, agents take the jobs it made ready, at most `n` at once. Needs a `GMOD_AGENT_KEY` secret: an Anthropic API key, or a token from `claude setup-token`.
+4. **Gitea only, the runner:** an existing runner's label (`--runs-on <label>`), or start one with `runner up` (`DOCKER_HOST=ssh://user@host` for another machine). Starting a runner runs software on their machine: say so first.
 
-## 3. Set it up
+Project dependencies the checks need go in `--setup '<commands>'` (e.g. `npm ci`).
 
-```sh
-node <gmod>/bin/gmod.mjs ci init --reviewer local --review-url http://127.0.0.1:8080/v1 --runs-on ai-local --gmod-home /home/me/gmod
-```
+## 3. Secrets are the person's
 
-Commit what it wrote **before** protecting main: once protected, the workflow itself can only change through a pull request. Push it, then:
+Never print a token, put one on a command line, or set a secret with a value you typed. Give the person the command, with the value piped in from their clipboard or a file:
 
 ```sh
-node <gmod>/bin/gmod.mjs ci protect                       # GitHub: through gh
-node <gmod>/bin/gmod.mjs ci protect    # Gitea: the person's token, from ~/.config/gmod/gitea-token
-node <gmod>/bin/gmod.mjs ci protect --require-review   # the review must pass too
+pbpaste | tr -d ' \r\n' | gh secret set GMOD_REVIEW_KEY --repo owner/repo
+pbpaste | tr -d ' \r\n' | glab variable set GMOD_REVIEW_KEY --masked -R group/project
 ```
 
-Then declare it, so nobody can quietly loosen it: `.gmod/protect.json` holds `{"require": ["gate", "review"], "up_to_date": true}`. With it on main, `gmod ci protect` applies it, the gate refuses every pull request while the live protection is weaker, and after each merge CI opens a "gmod breach" issue if something landed without what it requires. Add it in its own pull request (a governance change, like the workflow).
+On GitLab, gmod's jobs also need `GMOD_GITLAB_TOKEN`: a personal access token with `api` and `write_repository`. On Gitea, `setup` sets `GMOD_FORGE_TOKEN` from the tea login itself. `setup` stops before opening anything when one is missing and names it.
 
-Pull requests land on green by themselves: jobs through `mcp__gmod__commit` (or `gmod pr --auto`), and governance changes (plan, ADRs, CI, protect.json) through `gmod pr --auto`, which the review checks for anything that weakens what is checked. After each merge, CI brings every other open job branch up to date so its checks run again and it lands in turn.
-
-What doesn't land is reported, after each merge and hourly: a job whose pull request failed and has sat for 2 hours (`GMOD_STUCK_HOURS`), whose checks never finished, that passed but didn't merge, or that was claimed a day ago (`GMOD_CLAIM_HOURS`) with no pull request gets one issue, "gmod stuck: <job>", closed again once it lands or is let go.
+## 4. Set it up, and prove it
 
 ```sh
-node <gmod>/bin/gmod.mjs ci check      # over ssh, once per host: git config --global gmod.<host>.url http://host:port
+node <gmod>/bin/gmod.mjs setup --reviewer-url https://api.deepseek.com/v1 --reviewer-model deepseek-flash
 ```
 
-Never print a token or put one in a command line; read it from a file the person names.
-
-If `check` reports no runner, give the person the command to register one (`gitea-runner register --labels <label>:host`, or the repository's GitHub settings). Installing a runner downloads and runs software on their machine: that is theirs to run.
-
-## 4. Prove it
-
-A pipeline isn't set up until it has run. Take a small ready job (or ask the person for one), do it through `/gmod:work`, push it and open its pull request. Then watch:
-
-- the gate's comment: every line ✅, ending "the criteria fail with the code put back";
-- the review's comment;
-- the pull request mergeable only once the gate is green.
-
-Report what ran, how long it took, and anything that didn't.
+It's done when the last line says the governance pull request landed by itself. Then run `doctor`: every line ✓. Report what ran and how long it took. If it didn't land, its checks say why: read them (`gmod pr --status`, or the forge) and say what failed.
 
 ## Afterwards
 
-- Changing the workflow later is a pull request with only CI files in it (workflows, CODEOWNERS); the gate passes it as a CI change and leaves the review to the owners. Mixed with code, it's refused.
-- For teams: a pull request runs its own copy of the workflow, so it could weaken the gate it's checked by. `--owners` puts the workflow folder under CODEOWNERS too; `gmod ci protect --code-owners` makes their review required.
+- Changing CI later is a pull request with only CI files in it; the gate passes it as a governance change and the review checks it weakens nothing. Mixed with code, it's refused.
+- `ci upgrade` now and then; `doctor` says when a newer gmod is out.
