@@ -126,6 +126,12 @@ async function startAgents() {
   git('fetch', '-q', 'origin', '+refs/heads/*:refs/remotes/origin/*');
   const plan = core.planAt(root, 'origin/HEAD') ?? core.planFromDisk(root);
   if (!plan) return;
+  core.syncClaims(root);
+  const open = await gh('GET', gitea ? '/pulls?state=open&limit=50' : '/pulls?state=open&per_page=100');
+  for (const id of agents.staleAgentClaims(root, new Set((open.ok ? open.json ?? [] : []).map(p => p.head?.ref)))) {
+    run('bin/gmod.mjs', ['release', id]);
+    console.log(`gmod: let go of an agent's claim on ${id}: no pull request open for it`);
+  }
   const ready = agents.readyJobs(root, plan, await stuckJobs());
   const held = agents.agentClaims(root).length;
   const n = Math.max(0, Math.min(ready.length, AGENTS - held));

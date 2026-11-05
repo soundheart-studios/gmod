@@ -282,6 +282,10 @@ for (const [job, number] of filed) {
 const AGENTS = Number(env.GMOD_AGENTS || 0);
 if (env.GMOD_AGENT_KEY && AGENTS > 0) {
   const plan = core.planFromDisk(root);
+  for (const id of agents.staleAgentClaims(root, new Set(jobMrs.map(m => m.source_branch)))) {
+    run('bin/gmod.mjs', ['release', id]);
+    console.log(`agents: let go of an agent's claim on ${id}: no merge request open for it`);
+  }
   const ready = plan ? agents.readyJobs(root, plan, new Set(filed.keys())) : [];
   const held = agents.agentClaims(root).length;
   console.log(`agents: ${ready.length} job(s) ready, ${held} with agents`);
