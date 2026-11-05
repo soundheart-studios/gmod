@@ -34,7 +34,7 @@
 // From the action: GMOD_HOME (gmod itself), GMOD_GITHUB_TOKEN, and the
 // reviewer's settings. From the forge: GITHUB_* as usual.
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as core from '../lib/core.mjs';
 import * as agents from '../lib/agent.mjs';
@@ -52,6 +52,20 @@ const payload = process.env.GITHUB_EVENT_PATH ? JSON.parse(readFileSync(process.
 const runUrl = `${process.env.GITHUB_SERVER_URL}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}`;
 const reviewer = !!(process.env.GMOD_REVIEW_URL || process.env.ANTHROPIC_API_KEY);
 const sleep = ms => new Promise(ok => setTimeout(ok, ms));
+
+// gmod checked out inside the repository (Gitea's .gmod-tool) is never part
+// of anyone's work: git doesn't see it, so no commit can take it in.
+{
+  const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).stdout?.trim();
+  const rel = top && home ? join(home).replace(/\/$/, '') : '';
+  if (top && rel.startsWith(top + '/')) {
+    const exclude = join(top, '.git', 'info', 'exclude');
+    const line = `/${rel.slice(top.length + 1)}/`;
+    let have = '';
+    try { have = readFileSync(exclude, 'utf8'); } catch {}
+    if (!have.split('\n').includes(line)) appendFileSync(exclude, `${have && !have.endsWith('\n') ? '\n' : ''}${line}\n`);
+  }
+}
 // An agent key: a Claude Code sign-in token (sk-ant-oat…) or an API key.
 const agentKey = process.env.GMOD_AGENT_KEY || '';
 const AGENTS = Math.max(0, Number(process.env.GMOD_AGENTS || 1));
