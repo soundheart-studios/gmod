@@ -22,6 +22,9 @@ inputs:
   github-token:
     description: The token gmod comments, reports checks and merges with.
     default: ${{ github.token }}
+  checkout:
+    description: Check the repository out first ("false" when the workflow already has, e.g. on Gitea, where it also fetched gmod).
+    default: 'true'
   forge-token:
     description: A person's token, for what CI's own token can't do (reading branch protection, updating branches so checks run again).
     default: ''
@@ -30,6 +33,7 @@ runs:
   using: composite
   steps:
     - uses: actions/checkout@v4
+      if: inputs.checkout != 'false'
       with: { fetch-depth: 0 }
     - uses: actions/setup-node@v4
       with: { node-version: 22 }
