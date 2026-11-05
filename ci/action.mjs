@@ -285,6 +285,16 @@ async function fix(number, request) {
   }
   const comments = await commentsOf(number);
   const tries = comments.filter(c => (c.body ?? '').startsWith(agents.FIX_MARKER)).length;
+  // Commits on the branch by someone other than the agent: no new commit can
+  // take them out, and the gate never lets them through. A person decides.
+  const gate = comments.filter(c => (c.body ?? '').startsWith('<!-- gmod-gate -->')).at(-1)?.body ?? '';
+  const foreign = gate.match(/❌ claimed by [^\n]*, but its commits are by [^\n]*/)?.[0];
+  if (!request && foreign) {
+    const stuck = await stuckJobs();
+    if (!stuck.has(job)) await gh('POST', '/issues', { title: `gmod stuck: ${job}`, body: `#${number} carries commits not made by the agent that holds ${job} (${foreign.replace(/^❌ /, '')}). The gate refuses that, and no agent can take the commits out. Close #${number} and delete its branch to have an agent start ${job} over, or take the job yourself.\n\nNo agent takes ${job} again while this issue is open.` });
+    console.log(`gmod: #${number} has commits by someone else; reported stuck without a fix`);
+    return 0;
+  }
   if (!request && tries >= agents.FIX_TRIES) {
     const stuck = await stuckJobs();
     if (!stuck.has(job)) await gh('POST', '/issues', { title: `gmod stuck: ${job}`, body: `Agents tried ${tries} times to make #${number} pass its checks, and it still doesn't. It needs a person: read its gate and review comments.\n\nNo agent takes ${job} again while this issue is open.` });
