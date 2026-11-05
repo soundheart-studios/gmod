@@ -1,6 +1,6 @@
 {
   "name": "gmod",
-  "version": "0.2.0-rc.3",
+  "version": "0.2.0-rc.4",
   "description": "Planned work with proof: claim a job, stay in its files, fail first, then pass, then commit.",
   "types": "./types/index.d.ts",
   "author": {
