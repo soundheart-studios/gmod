@@ -15,7 +15,9 @@
 // with nothing in it, stops the merge rather than waving it through. A change
 // to the governance itself (the plan, decision records, CI, main's
 // protection) gets its own question: does it weaken what is checked?
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as core from '../lib/core.mjs';
 import * as adr from '../lib/adr.mjs';
 
@@ -230,11 +232,22 @@ function shortNote(s) {
   return (s.length ? `\n\n<sub>Shortened for the reviewer: ${s.length > 6 ? `${s.slice(0, 6).join(', ')} and ${s.length - 6} more` : s.join(', ')} (data files show a sample).</sub>` : '');
 }
 
+// A workflow that hands CI to gmod itself (its GitHub action, GitLab
+// component, or a checkout run as a local action) moves the gate and the
+// review out of the diff: what gmod runs is shown alongside, from this very
+// gmod, so moving them isn't mistaken for removing them.
+function gmodContext(diff) {
+  if (!/^\+.*(\.gmod-tool|soundheart-studios\/gmod@|\/gmod\/gmod@|repository: [\w.-]+\/gmod\b)/m.test(diff)) return '';
+  const home = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const read = f => { try { return readFileSync(join(home, f), 'utf8'); } catch { return ''; } };
+  return `\n\n<gmod-runs note="what the gmod named in the diff runs: the same gate (bin/gmod.mjs verify) and review (ci/review.mjs) as before, reported under the same check names">\n--- action.yml\n${read('action.yml')}\n--- ci/action.mjs\n${read('ci/action.mjs')}\n</gmod-runs>`;
+}
+
 async function reviewGovernance() {
   if (!LOCAL && !process.env.ANTHROPIC_API_KEY) unanswered('### gmod review: no reviewer for this governance change: set GMOD_REVIEW_URL, or ANTHROPIC_API_KEY');
   const { diff } = reviewDiff();
   if (diff.length > DIFF_LIMIT) unanswered(`### gmod review: the governance change is ${diff.length} characters, too big to review; split it`);
-  const answer = await askFor(GOVERNANCE_SYSTEM, GOVERNANCE, `<diff>\n${diff}\n</diff>`);
+  const answer = await askFor(GOVERNANCE_SYSTEM, GOVERNANCE, `<diff>\n${diff}\n</diff>${gmodContext(diff)}`);
   const r = answer.json;
   const verdicts = ['pass', 'concern', 'fail'];
   if (!r || typeof r.summary !== 'string' || !verdicts.includes(r.overall) || !verdicts.includes(r.weakens?.verdict)) unanswered(`### gmod review: the reviewer gave no usable answer on this governance change${answer.finish ? ` (it stopped: ${answer.finish})` : ''}`);
