@@ -71,7 +71,10 @@ Found while setting up the test bed: on a personal account without Pro, a privat
   - GitLab Free has no merge trains or required named checks. main is held by: no pushes, pipelines must pass (never skipped), semi-linear merges, and gmod-gate/gmod-review as pipeline jobs.
   - Found live: GitLab ran two auto-merges in the same second and semi-linear history didn't stop the second. After such a landing, gmod-after runs every finished job's checks on main as merged and opens a breach issue if they fail.
 
-### 6 · Gitea and the switch
+### 6 · Gitea and the switch ✅ (v1.0.0)
+- Proven on ai.local: `gmod runner up` (DOCKER_HOST=ssh://…) started the official runner for gmod-demo; demo #14 and gtrader #12 moved to the action and landed by themselves; the run after each merge: "what landed passed gate and review".
+- Gitea's runner clones `uses:` actions without signing in, and this Gitea requires sign-in: the workflow checks gmod out from the Gitea copy (`acme/gmod`) with GMOD_FORGE_TOKEN and runs it as a local action.
+- `tea` is the login (from `tea login add`); gmod reads it.
 - **runner-up:** `gmod runner up` starts the official runner in Docker, with labels and capacity.
 - **switch-demo**, then **switch-gtrader:** move to `uses: soundheart-studios/gmod@v1` through governance pull requests.
   - Done when: each lands on green, and the next job after it does too.
