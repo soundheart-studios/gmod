@@ -67,3 +67,12 @@ test('gmod runner up: config into a volume, then the official runner, the token 
   assert.equal(run.at(-1), RUNNER_IMAGE);
   assert.ok(run.includes('--restart') && run.includes('unless-stopped'));
 });
+
+test('agents in CI: the key from a secret, and how many at once', () => {
+  const y = actionWorkflow({ ref: 'v1.1.0', reviewer: { kind: 'none' }, agents: 2 });
+  assert.match(y, /agent-key: \$\{\{ secrets\.GMOD_AGENT_KEY \}\}/);
+  assert.match(y, /agents: 2/);
+  assert.match(y, /repository_dispatch: \{ types: \[gmod\] \}/, 'agent runs start through dispatch');
+  assert.doesNotMatch(actionWorkflow({ ref: 'v1.1.0', reviewer: { kind: 'none' } }), /agent-key/);
+  assert.doesNotMatch(actionWorkflow({ ref: 'v1.1.0', forge: 'gitea', action: 'a/gmod', reviewer: { kind: 'none' }, agents: 2 }), /agent-key/, 'GitHub only for now');
+});

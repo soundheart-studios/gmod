@@ -22,6 +22,15 @@ inputs:
   github-token:
     description: The token gmod comments, reports checks and merges with.
     default: ${{ github.token }}
+  agent-key:
+    description: A Claude Code sign-in token or an Anthropic API key. With it, agents in CI take ready jobs after each landing and hourly. Leave empty for no agents in CI.
+    default: ''
+  agents:
+    description: At most this many agents work at once.
+    default: '1'
+  claude-version:
+    description: The Claude Code version agents run.
+    default: '2.1.318'
   checkout:
     description: Check the repository out first ("false" when the workflow already has, e.g. on Gitea, where it also fetched gmod).
     default: 'true'
@@ -57,3 +66,6 @@ runs:
         GMOD_REVIEW_KEY: ${{ inputs.reviewer-url != '' && inputs.reviewer-key || '' }}
         ANTHROPIC_API_KEY: ${{ inputs.reviewer-url == '' && inputs.reviewer-key || '' }}
         GMOD_REVIEW_MODE: ${{ inputs.blocking == 'false' && 'comment' || '' }}
+        GMOD_AGENT_KEY: ${{ inputs.agent-key }}
+        GMOD_AGENTS: ${{ inputs.agents }}
+        GMOD_CLAUDE_VERSION: ${{ inputs.claude-version }}

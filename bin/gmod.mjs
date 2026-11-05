@@ -76,7 +76,7 @@ const HELP = `gmod: planned work with proof, on plain git
                                   on the forge's machine: refuse moving claims, and letting go of
                                   someone else's (Gitea's pre-receive.d)
   gmod receive                    the hook itself: reads pushed refs on stdin
-  gmod setup [--reviewer-url <u> --reviewer-model <m> | --reviewer none] [--advice] [--setup '<cmd>'] [--ref <vX>] [--runs-on <label>] [--no-wait]
+  gmod setup [--reviewer-url <u> --reviewer-model <m> | --reviewer none] [--advice] [--setup '<cmd>'] [--ref <vX>] [--runs-on <label>] [--agents <n>] [--no-wait]
                                   set up CI on GitHub, GitLab or Gitea: gmod pinned, main's rules,
                                   .gmod/protect.json; proven by landing them
   gmod doctor                     is everything in place? each ✗ with its fix
@@ -161,7 +161,7 @@ async function main() {
   const root = core.repoRoot();
   if (cmd === 'setup') {
     const reviewer = flags.reviewer === 'none' ? { kind: 'none' } : flags['reviewer-url'] ? { kind: 'openai', url: flags['reviewer-url'], model: flags['reviewer-model'] } : { kind: 'claude' };
-    const r = await setupLib.setup(root, { url: flags.url, reviewer, blocking: !flags.advice, setup: flags.setup ?? '', ref: flags.ref, runsOn: flags['runs-on'], wait: !flags['no-wait'], log: s => !flags.json && console.log(`${s.ok ? '✓' : '✗'} ${s.msg}`) });
+    const r = await setupLib.setup(root, { url: flags.url, reviewer, blocking: !flags.advice, setup: flags.setup ?? '', ref: flags.ref, runsOn: flags['runs-on'], agents: flags.agents ? Number(flags.agents) : 0, wait: !flags['no-wait'], log: s => !flags.json && console.log(`${s.ok ? '✓' : '✗'} ${s.msg}`) });
     if (flags.json) out(flags, r, '');
     return r.ok ? 0 : 1;
   }

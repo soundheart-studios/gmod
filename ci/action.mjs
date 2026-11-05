@@ -15,6 +15,15 @@
 //                          {landed: <sha>}  after-merge for what gmod merged
 //                          {check: <pr>}    gate, review and land a pull
 //                                           request that caught up with main
+//                          {work: true}     an agent takes the next ready job
+//
+// Agents in CI (with an agent key): after each landing, and hourly, one
+// agent run is started per ready job, at most GMOD_AGENTS at once (counted
+// by the claims agents hold). Each runs Claude Code headless with gmod
+// loaded, does one job the way an agent at a keyboard does (claim, red,
+// green, mcp__gmod__commit), and stops if anything is refused. A job whose
+// agent couldn't finish gets a "gmod stuck" issue, and isn't handed to an
+// agent again while that issue is open.
 //
 // On Gitea (its Actions run the same action) checks are reported under the
 // names Gitea's protection already requires ("gmod / gate (pull_request)"),
@@ -27,6 +36,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import * as core from '../lib/core.mjs';
 
 const home = process.env.GMOD_HOME;
 const token = process.env.GMOD_GITHUB_TOKEN;
@@ -41,6 +51,10 @@ const payload = process.env.GITHUB_EVENT_PATH ? JSON.parse(readFileSync(process.
 const runUrl = `${process.env.GITHUB_SERVER_URL}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}`;
 const reviewer = !!(process.env.GMOD_REVIEW_URL || process.env.ANTHROPIC_API_KEY);
 const sleep = ms => new Promise(ok => setTimeout(ok, ms));
+// An agent key: a Claude Code sign-in token (sk-ant-oat…) or an API key.
+const agentKey = process.env.GMOD_AGENT_KEY || '';
+const AGENTS = Math.max(0, Number(process.env.GMOD_AGENTS || 1));
+const AGENT = { name: 'gmod agent', email: 'gmod-agent@users.noreply.github.com' };
 
 async function gh(method, path, body, as = token) {
   const res = await fetch(`${api}/repos/${repo}${path}`, {
@@ -81,11 +95,79 @@ async function dispatch(clientPayload) {
 }
 
 // What follows a landing: claims, the tripwire, catch-up, what's stuck.
-function afterMerge(sha) {
+async function afterMerge(sha) {
   const env = { GMOD_TOKEN: token, GMOD_SHA: sha, GMOD_FORGE: gitea ? 'gitea' : 'github' };
   const swept = run('bin/gmod.mjs', ['sweep']);
   const after = run('ci/after-merge.mjs', [], env);
+  await startAgents();
   return swept || after;
+}
+
+// One agent run per ready job, up to GMOD_AGENTS at once.
+async function startAgents() {
+  if (!agentKey || gitea || !AGENTS) return;
+  const root = core.repoRoot();
+  git('fetch', '-q', 'origin', '+refs/heads/*:refs/remotes/origin/*');
+  const plan = core.planAt(root, 'origin/HEAD') ?? core.planFromDisk(root);
+  if (!plan) return;
+  const states = core.states(root, plan, { sync: true });
+  const held = Object.values(core.claims(root)).filter(c => c.by === AGENT.email).length;
+  const issues = await gh('GET', '/issues?state=open&per_page=100');
+  const stuck = new Set((issues.ok ? issues.json ?? [] : []).filter(i => !i.pull_request && i.title?.startsWith('gmod stuck: ')).map(i => i.title.slice(12)));
+  const ready = states.filter(j => j.state === 'ready' && !stuck.has(j.id));
+  const n = Math.min(ready.length, AGENTS - held);
+  for (let i = 0; i < n; i++) await dispatch({ work: true });
+  if (ready.length || held) console.log(`gmod: ${ready.length} job(s) ready, ${held} with agents; ${Math.max(0, n)} agent(s) started`);
+}
+
+// One agent, one job: Claude Code headless with gmod loaded.
+async function work() {
+  if (!agentKey) {
+    console.log('gmod: no agent key: no agents in CI');
+    return 0;
+  }
+  git('config', 'user.name', AGENT.name);
+  git('config', 'user.email', AGENT.email);
+  const root = core.repoRoot();
+  const before = new Set(Object.keys(core.claims(root)));
+  const install = spawnSync('npm', ['install', '-g', '--no-audit', '--no-fund', `@anthropic-ai/claude-code@${process.env.GMOD_CLAUDE_VERSION || 'latest'}`], { stdio: 'inherit' });
+  if (install.status !== 0) return 1;
+  const auth = agentKey.startsWith('sk-ant-oat') ? { CLAUDE_CODE_OAUTH_TOKEN: agentKey } : { ANTHROPIC_API_KEY: agentKey };
+  const prompt = [
+    'You are an agent in CI, with no person watching. Do exactly one gmod job, start to finish, following /gmod:work "One job":',
+    'mcp__gmod__next, mcp__gmod__claim it, read it with mcp__gmod__status, write its tests and mcp__gmod__check (red),',
+    'make them pass and mcp__gmod__check (green), then mcp__gmod__commit. Stay inside the job\'s files.',
+    'If a claim is taken, take the next ready job. If anything is refused or you cannot finish, say exactly why in one line and stop.',
+  ].join(' ');
+  const r = spawnSync('claude', ['-p', prompt, '--plugin-dir', home, '--permission-mode', 'bypassPermissions', '--max-turns', process.env.GMOD_AGENT_TURNS || '60'], {
+    stdio: ['ignore', 'pipe', 'inherit'],
+    encoding: 'utf8',
+    env: { ...process.env, ...auth, GH_TOKEN: token, GMOD_TOKEN: token },
+  });
+  const said = (r.stdout || '').trim();
+  console.log(said);
+  // The pull request the agent opened was opened with CI's own token, which
+  // starts no run: start its checks.
+  core.syncClaims(root);
+  const mine = Object.entries(core.claims(root)).filter(([id, c]) => c.by === AGENT.email && !before.has(id)).map(([id]) => id);
+  const open = await gh('GET', '/pulls?state=open&per_page=100');
+  let started = 0;
+  for (const job of mine) {
+    const pr = (open.ok ? open.json ?? [] : []).find(p => p.head?.ref === `gmod/${job}`);
+    if (pr) {
+      await dispatch({ check: pr.number });
+      started++;
+      console.log(`gmod: the agent finished ${job}: #${pr.number}, now checked`);
+      continue;
+    }
+    // Couldn't finish: let the job go, and say why where a person sees it.
+    run('bin/gmod.mjs', ['release', job]);
+    const body = `An agent in CI took ${job} and couldn't finish it.\n\nWhat it said:\n\n> ${said.split('\n').slice(-6).join('\n> ') || '(nothing)'}\n\nRun: ${runUrl}\n\nNo agent takes ${job} again while this issue is open. Close it to let one try again.`;
+    await gh('POST', '/issues', { title: `gmod stuck: ${job}`, body });
+    console.log(`gmod: the agent couldn't finish ${job}; released, and reported stuck`);
+  }
+  if (!mine.length) console.log('gmod: the agent took no job');
+  return r.status === 0 || started ? 0 : 1;
 }
 
 // Gate, review, and land one pull request, as checked out at its head.
@@ -187,7 +269,8 @@ if (event === 'pull_request' || event === 'pull_request_target') {
 
 if (event === 'repository_dispatch' && payload.action === 'gmod') {
   const p = payload.client_payload ?? {};
-  if (p.landed) process.exit(afterMerge(p.landed));
+  if (p.landed) process.exit(await afterMerge(p.landed));
+  if (p.work) process.exit(await work());
   if (p.check) {
     // Taking main in happens on GitHub's side, a moment after it's asked for.
     let pr;
@@ -206,7 +289,7 @@ if (event === 'repository_dispatch' && payload.action === 'gmod') {
 }
 
 if (event === 'push' || event === 'schedule' || event === 'workflow_dispatch') {
-  process.exit(afterMerge(process.env.GITHUB_SHA));
+  process.exit(await afterMerge(process.env.GITHUB_SHA));
 }
 
 console.log(`gmod: nothing to do on ${event}`);
