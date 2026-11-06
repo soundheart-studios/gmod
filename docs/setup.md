@@ -64,21 +64,24 @@ From `origin`'s URL: `github.com` is GitHub (an SSH alias such as `github-2` is 
 
 ## The CI file
 
+What `gmod setup` writes, here with DeepSeek as the reviewer. `gmod ci upgrade` keeps the pinned release current.
+
 GitHub, `.github/workflows/gmod.yml`:
 
 ```yaml
 name: gmod
 on:
-  pull_request:
+  pull_request: { types: [opened, synchronize, reopened, unlabeled] }
   push: { branches: [main] }
   repository_dispatch: { types: [gmod] }
+  issue_comment: { types: [created] }
   schedule: [{ cron: '17 * * * *' }]
 jobs:
   gmod:
     runs-on: ubuntu-latest
     permissions: { contents: write, pull-requests: write, issues: write, statuses: write }
     steps:
-      - uses: soundheart-studios/gmod@v1.0.2
+      - uses: soundheart-studios/gmod@v1.3.2
         with:
           reviewer-url: https://api.deepseek.com/v1
           reviewer-model: deepseek-flash
@@ -89,7 +92,7 @@ GitLab, `.gitlab-ci.yml` (the component is added to what's there):
 
 ```yaml
 include:
-  - component: gitlab.com/soundheart-studios/gmod/gmod@v1.0.2
+  - component: gitlab.com/soundheart-studios/gmod/gmod@v1.3.2
     inputs:
       reviewer-url: https://api.deepseek.com/v1
       reviewer-model: deepseek-flash
@@ -99,6 +102,16 @@ include:
 Gitea, `.gitea/workflows/gmod.yml`. Gitea's runner fetches actions without signing in, so the workflow checks out a copy of gmod on your Gitea with your token and runs it from there:
 
 ```yaml
+name: gmod
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+  push:
+    branches: [main]
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: '17 * * * *'
 jobs:
   gmod:
     runs-on: ubuntu-latest
@@ -108,7 +121,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: you/gmod
-          ref: v1.0.2
+          ref: v1.3.2
           path: .gmod-tool
           token: ${{ secrets.GMOD_FORGE_TOKEN }}
       - uses: ./.gmod-tool
@@ -130,6 +143,8 @@ On every pull request it runs the gate, then the review, and reports both as che
 | Keeps job branches current | gmod's catch-up | gmod's catch-up | gmod's catch-up |
 | Protects main | a ruleset named `gmod` | protected branch, pipelines must pass, semi-linear history | branch protection |
 | Secrets it needs | the reviewer's key | `GMOD_GITLAB_TOKEN` (a person's token) and the reviewer's key | `GMOD_FORGE_TOKEN` (set by setup from your login) |
+| With agents, also | `GMOD_AGENT_KEY`; optionally the App's `GMOD_APP_ID` and `GMOD_APP_KEY` | `GMOD_AGENT_KEY` | `GMOD_AGENT_KEY` |
+| `@gmod` comments | yes | no (comments start no pipeline) | yes |
 
 On Gitea, `DOCKER_HOST=ssh://you@host gmod runner up` starts the runner on another machine: the official `gitea/runner` image, registered to the repository, restarted with Docker.
 

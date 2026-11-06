@@ -1,0 +1,75 @@
+<!doctype html>
+<!-- Source of docs/assets/gmod-guards.png. Render:
+     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars \
+       --force-device-scale-factor=2 --window-size=1600,670 \
+       --screenshot=docs/assets/gmod-guards.png docs/assets/src/gmod-guards.html -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --ink: #0f172a; --muted: #475569; --faint: #94a3b8; --line: #e2e8f0;
+    --agent: #059669; --agent-bg: #ecfdf5; --ci: #4f46e5; --ci-bg: #eef2ff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1600px; height: 670px; background: #fff; }
+  body { font-family: -apple-system, "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif; color: var(--ink); padding: 56px 80px; }
+  .kicker { font-size: 17px; font-weight: 700; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
+  h1 { font-size: 50px; line-height: 1.08; font-weight: 800; letter-spacing: -.025em; margin-top: 12px; }
+  h1 span { color: var(--ci); }
+  .core { margin-top: 38px; background: var(--ink); color: #fff; border-radius: 18px; padding: 16px 26px; display: flex; align-items: center; gap: 16px; font-size: 21px; }
+  .core code { font-family: "SF Mono", Menlo, monospace; background: #1e293b; padding: 4px 10px; border-radius: 8px; font-size: 19px; color: #a5b4fc; }
+  .core b { font-weight: 800; }
+  .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 22px; }
+  .col { border-radius: 22px; padding: 24px 26px 26px; border: 2px solid; }
+  .a { background: var(--agent-bg); border-color: #6ee7b7; }
+  .b { background: var(--ci-bg); border-color: #a5b4fc; }
+  .c { background: #f8fafc; border-color: #cbd5e1; }
+  .when { font-size: 14px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+  .a .when { color: var(--agent); } .b .when { color: var(--ci); } .c .when { color: var(--muted); }
+  .name { font-size: 30px; font-weight: 800; margin-top: 4px; }
+  .by { font-size: 16.5px; color: var(--muted); margin-top: 4px; }
+  ul { list-style: none; margin-top: 16px; }
+  li { font-size: 18.5px; line-height: 1.35; padding: 7px 0 7px 30px; position: relative; color: #334155; }
+  li::before { content: "✕"; position: absolute; left: 4px; top: 7px; font-weight: 800; color: #dc2626; font-size: 17px; }
+  .c li::before { content: "!"; color: #d97706; left: 9px; }
+</style>
+</head>
+<body>
+  <div class="kicker">gmod · where the rules hold</div>
+  <h1>One rulebook, <span>checked three times.</span></h1>
+  <div class="core"><b>Every rule lives in one place:</b> <code>gmod</code> the command. The plugin, you at a terminal, and CI all call it, so an agent hears what CI will say later.</div>
+  <div class="cols">
+    <div class="col a">
+      <div class="when">While an agent works</div>
+      <div class="name">The plugin</div>
+      <div class="by">instant, worded feedback to Claude</div>
+      <ul>
+        <li>editing outside the job's files</li>
+        <li>committing without red, then green</li>
+        <li>writing the plan or the rules</li>
+        <li>approving, or merging by hand</li>
+      </ul>
+    </div>
+    <div class="col b">
+      <div class="when">Before it merges</div>
+      <div class="name">CI and protection</div>
+      <div class="by">final: nothing reaches main without it</div>
+      <ul>
+        <li>a job that isn't in the plan, or isn't claimed</li>
+        <li>files outside the job</li>
+        <li>tests that pass without the change</li>
+        <li>rule or CI changes mixed with code</li>
+        <li>anything that weakens what is checked</li>
+      </ul>
+    </div>
+    <div class="col c">
+      <div class="when">After it lands</div>
+      <div class="name">CI, watching</div>
+      <div class="by">opens an issue for a person</div>
+      <ul>
+        <li>"gmod breach": something reached main without what it requires</li>
+        <li>"gmod stuck": a job failed, stalled or was abandoned</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!doctype html>
+<!-- Source of docs/assets/gmod-gate.png. Render:
+     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars \
+       --force-device-scale-factor=2 --window-size=1600,770 \
+       --screenshot=docs/assets/gmod-gate.png docs/assets/src/gmod-gate.html -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --ink: #0f172a; --muted: #475569; --faint: #94a3b8; --line: #e2e8f0;
+    --you: #ea580c; --agent: #059669; --agent-bg: #ecfdf5; --ci: #4f46e5; --ci-bg: #eef2ff; --ship: #16a34a; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1600px; height: 770px; background: #fff; }
+  body { font-family: -apple-system, "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif; color: var(--ink); padding: 56px 80px; }
+  .kicker { font-size: 17px; font-weight: 700; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
+  h1 { font-size: 50px; line-height: 1.08; font-weight: 800; letter-spacing: -.025em; margin-top: 12px; }
+  h1 span { color: var(--ci); }
+  .grid { display: grid; grid-template-columns: 220px 40px 1fr 40px 1fr 40px 1fr 40px 200px; margin-top: 40px; align-items: stretch; }
+  .arrow { display: flex; align-items: center; justify-content: center; color: var(--faint); }
+  .arrow svg { width: 28px; height: 28px; }
+  .pill { border-radius: 20px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 18px; font-weight: 800; font-size: 23px; }
+  .pr { border: 2px dashed #cbd5e1; }
+  .pill small { display: block; font-size: 15px; font-weight: 600; color: var(--muted); margin-top: 6px; }
+  .land { background: var(--ship); color: #fff; } .land small { color: #dcfce7; }
+  .card { border-radius: 20px; padding: 20px 22px; border: 2px solid; }
+  .k { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .p { background: var(--agent-bg); border-color: #6ee7b7; }
+  .r { background: var(--ci-bg); border-color: #a5b4fc; }
+  .step { font-size: 14px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+  .k .step { color: #a5b4fc; } .p .step { color: var(--agent); } .r .step { color: var(--ci); }
+  .name { font-size: 25px; font-weight: 800; margin-top: 4px; }
+  ul { list-style: none; margin-top: 12px; }
+  li { font-size: 16.5px; line-height: 1.35; padding: 5px 0 5px 24px; position: relative; color: #334155; }
+  .k li { color: #cbd5e1; }
+  li::before { content: "✓"; position: absolute; left: 0; top: 5px; font-weight: 800; color: #22c55e; }
+  .p li.no::before { content: "✕"; color: #dc2626; }
+  .gov { margin-top: 26px; display: grid; grid-template-columns: 260px 1fr; gap: 22px; align-items: center; border: 2px solid #fdba74; background: #fff7ed; border-radius: 20px; padding: 18px 24px; }
+  .gov .step { color: var(--you); }
+  .gov .name { font-size: 23px; }
+  .gov p { font-size: 18px; line-height: 1.45; color: #334155; }
+  .foot { margin-top: 18px; font-size: 17.5px; color: var(--muted); }
+  .foot b { color: var(--ink); }
+</style>
+</head>
+<body>
+  <div class="kicker">gmod · the CI gate</div>
+  <h1>A test only counts <span>if it fails without the change.</span></h1>
+  <div class="grid">
+    <div class="pill pr">Pull request<small>branch gmod/&lt;job&gt;</small></div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    <div class="card k"><div class="step">1 · Is it allowed?</div><div class="name">The job</div>
+      <ul><li>in main's plan, read from main</li><li>what it waits for is on main</li><li>claimed, and committed by the claimant</li><li>only the job's files</li><li>main still protected as declared</li></ul></div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    <div class="card p"><div class="step">2 · Is it proven?</div><div class="name">The proof</div>
+      <ul><li>the criteria pass with the change</li><li class="no">code put back, new tests kept: the criteria must fail</li></ul></div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    <div class="card r"><div class="step">3 · Is it right?</div><div class="name">The review</div>
+      <ul><li>each criterion met</li><li>the tests are real</li><li>it stays within the goal</li><li>it keeps every rule (ADR)</li></ul></div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    <div class="pill land">Lands<small>once both pass and it's up to date with main</small></div>
+  </div>
+  <div class="gov"><div><div class="step">Rules changing?</div><div class="name">Plan, ADRs or CI</div></div>
+    <p>A change to the plan, the rules or CI must come alone, never mixed with code. The review then asks one question: <b>does it weaken what is checked?</b> If it does, it doesn't land.</p></div>
+  <div class="foot"><b>Fails closed:</b> no answer from the reviewer, or one it can't read, stops the merge. A maintainer can overrule a fail with the <b>gmod-override</b> label.</div>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!doctype html>
+<!-- Source of docs/assets/gmod-why.png. Render:
+     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars \
+       --force-device-scale-factor=2 --window-size=1600,700 \
+       --screenshot=docs/assets/gmod-why.png docs/assets/src/gmod-why.html -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --ink: #0f172a; --muted: #475569; --faint: #94a3b8; --line: #e2e8f0;
+    --agent: #059669; --agent-bg: #ecfdf5; --ci: #4f46e5; --bad: #dc2626; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1600px; height: 700px; background: #fff; }
+  body { font-family: -apple-system, "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif; color: var(--ink); padding: 60px 80px; }
+  .kicker { font-size: 17px; font-weight: 700; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
+  h1 { font-size: 64px; line-height: 1.06; font-weight: 800; letter-spacing: -.025em; margin-top: 12px; }
+  h1 span { color: var(--agent); }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; margin-top: 44px; }
+  .col { border-radius: 24px; padding: 30px 34px 32px; border: 2px solid; }
+  .before { background: #f8fafc; border-color: #e2e8f0; }
+  .after { background: var(--agent-bg); border-color: #6ee7b7; }
+  .label { font-size: 15px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+  .before .label { color: var(--muted); } .after .label { color: var(--agent); }
+  .title { font-size: 32px; font-weight: 800; margin-top: 4px; }
+  ul { list-style: none; margin-top: 20px; }
+  li { font-size: 22px; line-height: 1.35; padding: 9px 0 9px 40px; position: relative; }
+  .before li { color: #475569; }
+  .after li { color: #0f172a; }
+  li::before { position: absolute; left: 0; top: 9px; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 900; color: #fff; }
+  .before li::before { content: "✕"; background: #fca5a5; }
+  .after li::before { content: "✓"; background: #10b981; }
+  li b { font-weight: 800; }
+</style>
+</head>
+<body>
+  <div class="kicker">gmod · why</div>
+  <h1>AI writes code fast. <span>gmod makes sure it's right.</span></h1>
+  <div class="cols">
+    <div class="col before">
+      <div class="label">AI agents on their own</div>
+      <div class="title">You're the safety net</div>
+      <ul>
+        <li>You read every change, or merge and hope</li>
+        <li>Tests that pass whether the code works or not</li>
+        <li>Two agents' work collides and main breaks</li>
+        <li>Nothing moves unless you're there to merge</li>
+      </ul>
+    </div>
+    <div class="col after">
+      <div class="label">With gmod</div>
+      <div class="title">The system is the safety net</div>
+      <ul>
+        <li><b>Approve the plan once;</b> agents do the jobs</li>
+        <li><b>Every test must fail first,</b> then pass, or it doesn't count</li>
+        <li><b>CI proves it all again;</b> main stays green</li>
+        <li><b>Work lands while you're away;</b> you hear when it's stuck</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

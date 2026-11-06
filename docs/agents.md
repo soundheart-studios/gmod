@@ -12,6 +12,8 @@ Either way the work ends the same: a pull request, the gate, the review, and a m
 
 ## Agents in CI
 
+![What CI does: the gate, always on and with no AI, proves every pull request; the review, optional, judges it with any model; agents, optional, are Claude Code on an Anthropic API key: they build ready jobs, fix their own failed checks and answer @gmod, and their pull requests pass the same gate and review](assets/gmod-ci.png)
+
 Turn them on with `gmod setup --agents 1` and an Anthropic API key from [console.anthropic.com](https://console.anthropic.com), kept as the `GMOD_AGENT_KEY` secret. It is billed to that Console account, per use. A Claude sign-in token (`claude setup-token`, `sk-ant-oat…`) is refused: gmod never runs unattended on a person's subscription. The workflow gains two lines:
 
 ```yaml

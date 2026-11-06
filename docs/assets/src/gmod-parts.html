@@ -1,0 +1,61 @@
+<!doctype html>
+<!-- Source of docs/assets/gmod-parts.png. Render:
+     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars \
+       --force-device-scale-factor=2 --window-size=1600,650 \
+       --screenshot=docs/assets/gmod-parts.png docs/assets/src/gmod-parts.html -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --ink: #0f172a; --muted: #475569; --faint: #94a3b8; --line: #e2e8f0;
+    --you: #ea580c; --agent: #059669; --agent-bg: #ecfdf5; --ci: #4f46e5; --ci-bg: #eef2ff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1600px; height: 650px; background: #fff; }
+  body { font-family: -apple-system, "SF Pro Display", "Inter", "Helvetica Neue", Arial, sans-serif; color: var(--ink); padding: 56px 80px; }
+  .kicker { font-size: 17px; font-weight: 700; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
+  h1 { font-size: 50px; line-height: 1.08; font-weight: 800; letter-spacing: -.025em; margin-top: 12px; }
+  h1 span { color: var(--ci); }
+  .row { display: grid; grid-template-columns: 1fr 44px 1fr 44px 1fr 44px 1fr; margin-top: 44px; align-items: stretch; }
+  .arrow { display: flex; align-items: center; justify-content: center; color: var(--faint); }
+  .arrow svg { width: 30px; height: 30px; }
+  .box { border-radius: 22px; padding: 22px 22px 24px; border: 2px solid; }
+  .you { background: #fff7ed; border-color: #fdba74; }
+  .cc { background: var(--agent-bg); border-color: #6ee7b7; }
+  .cli { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .forge { background: var(--ci-bg); border-color: #a5b4fc; }
+  .who { font-size: 14px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+  .you .who { color: var(--you); } .cc .who { color: var(--agent); } .cli .who { color: #a5b4fc; } .forge .who { color: var(--ci); }
+  .name { font-size: 27px; font-weight: 800; margin-top: 4px; }
+  .items { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .i { background: #fff; border: 2px solid var(--line); border-radius: 12px; padding: 9px 12px; font-size: 16.5px; line-height: 1.3; color: #334155; }
+  .cli .i { background: #1e293b; border-color: #334155; color: #e2e8f0; }
+  .i b { color: var(--ink); } .cli .i b { color: #fff; }
+  .i code, .repo code { font-family: "SF Mono", Menlo, monospace; font-size: 14.5px; }
+  .repo { margin-top: 22px; border: 2px dashed #cbd5e1; border-radius: 22px; padding: 18px 24px; display: flex; align-items: center; gap: 22px; }
+  .repo .who { color: var(--muted); flex: none; }
+  .repo .files { display: flex; gap: 12px; flex-wrap: wrap; }
+  .repo .f { background: #f1f5f9; border-radius: 10px; padding: 8px 12px; font-size: 16px; color: #334155; }
+  .repo .note { margin-left: auto; font-size: 17px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="kicker">gmod · the parts</div>
+  <h1>No server, no database. <span>Just git, a command and CI.</span></h1>
+  <div class="row">
+    <div class="box you"><div class="who">You</div><div class="name">Decide</div>
+      <div class="items"><div class="i"><b>The pane</b>: progress, what needs you</div><div class="i"><b>Approve</b> the plan and the rules</div></div></div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    <div class="box cc"><div class="who">Claude Code</div><div class="name">The plugin</div>
+      <div class="items"><div class="i"><b>Skills</b>: plan, work, adr, ci</div><div class="i"><b>Agents</b>, and subagents in worktrees</div><div class="i"><b>Hooks</b> on every edit and commit</div></div></div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    <div class="box cli"><div class="who">The rulebook</div><div class="name">gmod command</div>
+      <div class="items"><div class="i"><b>Every rule</b> lives here</div><div class="i">Called by the plugin, by you, and by CI</div></div></div>
+    <div class="arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+    <div class="box forge"><div class="who">GitHub · GitLab · Gitea</div><div class="name">CI</div>
+      <div class="items"><div class="i"><b>Gate</b>, then <b>review</b> (any model)</div><div class="i"><b>Protection</b> on main</div><div class="i"><b>After landing</b>: catch up, watch</div></div></div>
+  </div>
+  <div class="repo"><div class="who">In your repository</div>
+    <div class="files"><span class="f"><code>.gmod/plan.json</code> the plan</span><span class="f"><code>docs/adr/</code> the rules</span><span class="f"><code>.gmod/journal/</code> notes</span><span class="f"><code>refs/gmod/claims/*</code> who has which job</span></div>
+    <div class="note">all of it plain git</div></div>
+</body>
+</html>

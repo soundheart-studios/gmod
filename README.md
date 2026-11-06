@@ -4,6 +4,14 @@
 
 Plan your work with Claude. Agents build it, prove it works, and land it on `main`, working beside you or on their own in CI.
 
+![Why gmod. AI writes code fast; gmod makes sure it's right. With AI agents on their own, you're the safety net: you read every change or merge and hope, tests pass whether the code works or not, two agents' work collides and main breaks, and nothing moves unless you're there to merge. With gmod, the system is the safety net: you approve the plan once and agents do the jobs, every test must fail first and then pass, CI proves it all again so main stays green, and work lands while you're away; you hear when it's stuck](docs/assets/gmod-why.png)
+
+- **Proof, not promises.** Every job's test fails before the change and passes after. CI proves it again, and an AI reviews it.
+- **Nothing waits on you.** Work lands on green. You only approve the plan and the rules.
+- **Works with what you have.** GitHub, GitLab or Gitea. Claude, DeepSeek, or a model you host.
+
+## How it works
+
 ![gmod in four steps: you approve the plan and its rules; agents build each job, its test failing first and then passing; CI proves it again and an AI reviewer checks the tests are real; green work lands on main by itself](docs/assets/gmod-overview.png)
 
 ## Install
@@ -49,12 +57,6 @@ That's it. Every job lands by itself once it's proven. Do the work with Claude (
 
 Agents in CI always use an API key, never a person's Claude sign-in. More: [setting up a repository](docs/setup.md#what-ci-does).
 
-## Why gmod
-
-- **Proof, not promises.** Every job's test fails before the change and passes after. CI proves it again, and an AI reviews it.
-- **Nothing waits on you.** Work lands on green. You only approve the plan and the rules.
-- **Works with what you have.** GitHub, GitLab or Gitea. Claude, DeepSeek, or a model you host.
-
 ## Learn more
 
 - [How it works](docs/how-it-works.md)
@@ -68,4 +70,4 @@ Agents in CI always use an API key, never a person's Claude sign-in. More: [sett
 
 ## License
 
-MIT, © 2026 Soundheart Studios. See [LICENSE](LICENSE).
+MIT, © 2026 Soundheart Studios. See [LICENSE](LICENSE). To report a security problem: [SECURITY.md](SECURITY.md).

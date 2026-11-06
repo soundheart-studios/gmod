@@ -1,33 +1,23 @@
 # How gmod works
 
 - **A plan** is a list of small **jobs**. Each says what it achieves, which files it may touch, and the check that proves it's done.
-- **Rules** (architecture decision records) bind every job they cover. The AI review holds each pull request to them.
-- **Every job proves itself:** its check fails before the change and passes after. CI proves it again on its own, an AI reviewer reads it, and then it merges on green.
+- **Rules** (architecture decision records, ADRs) bind every job they cover. The AI review holds each pull request to them.
+- **Every job proves itself:** its check fails before the change and passes after. CI proves it again on its own, an AI reviewer reads it (if you have one), and then it merges on green.
 - **You only approve.** Plans and rules are yours. Everything after is agents and CI.
 
 ## A job's life
 
-```mermaid
-flowchart TB
-    A["Ready<br/>it's in the plan, and nothing it waits for is left"]
-    B["Claimed<br/>one agent takes it; no other agent can"]
-    C["Failing<br/>the agent writes a test that fails"]
-    D["Passing<br/>it makes the test pass"]
-    E["Committed<br/>only now may it commit"]
-    F["Pull request<br/>CI proves it again, and an AI reviews it"]
-    G["Done<br/>it lands on main, and the jobs after it become ready"]
-    A --> B --> C --> D --> E --> F --> G
-```
+![A job's life: ready in the plan you approved; an agent claims it, writes a failing test, makes it pass in the job's files only, and may only then commit; CI's gate proves it again and the review checks the tests are real; it lands on main by itself, and the jobs after it become ready](assets/gmod-job.png)
+
+You and an agent go through the same steps and the same checks. A job that fails, stalls or is abandoned gets a **gmod stuck** issue for a person.
 
 ## One rulebook, three enforcers
 
-Every rule lives in the `gmod` CLI. The plugin calls it while agents work, you can call it from a terminal, and CI calls it on every pull request, so an agent hears exactly what CI will say later.
+![One rulebook, checked three times: while an agent works, the plugin stops edits outside the job's files, commits without red then green, and writing the plan or rules, approving or merging by hand; before it merges, CI and protection stop jobs not in the plan or not claimed, files outside the job, tests that pass without the change, rule or CI changes mixed with code, and anything that weakens what is checked; after it lands, CI opens a gmod breach or gmod stuck issue](assets/gmod-guards.png)
 
-| Where | What it stops |
-|---|---|
-| **While an agent works** (the plugin) | edits outside the job's files; commits without red then green; agents writing the plan or rules, approving, or merging by hand |
-| **Before it merges** (CI + protection) | jobs not in `main`'s plan or not claimed; files outside the job; tests that pass without the change; plan, rule or CI changes mixed with code; anything that weakens what is checked; a protection weaker than `.gmod/protect.json` |
-| **After it lands** (CI) | anything that reached `main` without what it requires (a breach issue); jobs that stall (a stuck issue) |
+Every rule lives in the `gmod` command. The plugin calls it while agents work, you can call it from a terminal, and CI calls it on every pull request, so an agent hears exactly what CI will say later.
+
+CI is the final word: nothing reaches `main` without passing it, whoever wrote the code. And `main`'s protection must stay at least as strong as `.gmod/protect.json` declares; loosen it by hand and nothing merges until it's put back.
 
 ## Everything is git
 
@@ -36,6 +26,8 @@ The plan, rules and journals are files. A claim is a tiny ref, `refs/gmod/claims
 ## Proof, not trust
 
 CI takes the job's tests from the branch, puts the old code back, and checks they fail; then checks they pass on the new code. A test that never failed proves nothing.
+
+What this can't prove is that the test is the *right* test: whoever writes the code also writes its test. That's what the AI review is for, and why plans name what each job must do in plain words.
 
 ## What's in your repository
 

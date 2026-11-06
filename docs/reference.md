@@ -4,43 +4,18 @@ The deep version, for when you want to know exactly what happens. Start with [ho
 
 ## The parts
 
-```mermaid
-flowchart TB
-    subgraph you["You"]
-        P["pane, cards,<br/>/gmod commands"]
-    end
-    subgraph claude["Claude Code session"]
-        M["gmod mod<br/>hooks/register.tsx"]
-        S["skills<br/>plan · work · adr · ci"]
-        A["agents and<br/>worktree subagents"]
-    end
-    CLI["gmod command<br/>bin/gmod.mjs + lib/*.mjs<br/><i>every rule lives here</i>"]
-    subgraph repo["git repository"]
-        PL[".gmod/plan.json"]
-        ADR["docs/adr/*.md"]
-        J[".gmod/journal/*.md"]
-        R["refs/gmod/claims/*"]
-    end
-    subgraph forge["GitHub, GitLab or Gitea"]
-        CI["CI workflow:<br/>gate → review → sweep"]
-        BP["branch protection<br/>on main"]
-        H["claim guard<br/>(Gitea hook)"]
-    end
-    LLM["reviewer:<br/>Claude or a local model"]
+![The parts: you decide in the pane; Claude Code runs the plugin's skills, agents and hooks; every rule lives in the gmod command, called by the plugin, by you and by CI; CI on GitHub, GitLab or Gitea runs the gate, then the review with any model, protects main and catches up after landing; the repository holds the plan, the rules, the journals and the claims, all plain git](assets/gmod-parts.png)
 
-    P --> M
-    S --> A
-    A -- "tools and edits<br/>pass through hooks" --> M
-    M --> CLI
-    CLI --> repo
-    repo -- push --> forge
-    CI --> CLI
-    CI --> LLM
-    BP -. "requires the gate" .-> CI
-    H -. "guards" .-> R
-```
+| Part | Where it lives |
+|---|---|
+| The plugin (mod) | `hooks/register.tsx`: the pane, and hooks on every tool call, edit and commit |
+| Skills | `skills/plan`, `work`, `adr`, `ci` |
+| The `gmod` command, with every rule | `bin/gmod.mjs` and `lib/*.mjs` (`core`, `adr`, `ci`, `setup`, `agent`, `gitlab`, `app`, `runner`, `receive`) |
+| CI | `action.yml` and `ci/action.mjs` (GitHub, Gitea), `templates/gmod.yml` and `ci/gitlab.mjs` (GitLab), `ci/review.mjs` (the reviewer) |
+| Reviewer | Claude, or any OpenAI-compatible model |
+| Claim guard on push | optional, Gitea only: a server hook (`gmod ci guard-claims`) |
 
-**One rulebook, three enforcers.** Every rule is in the `gmod` command (`lib/core.mjs`, `lib/adr.mjs`, `lib/ci.mjs`, `lib/receive.mjs`). The mod, a person at a terminal and CI all call the same code, so an agent hears exactly what CI will say later.
+**One rulebook, three enforcers.** The mod, a person at a terminal and CI all call the same code, so an agent hears exactly what CI will say later.
 
 ## Where the state lives
 
@@ -60,30 +35,15 @@ A claim is a tiny git ref. Pushing it is the lock: if someone else pushed it fir
 
 ## What gets refused, and where
 
-```mermaid
-flowchart LR
-    subgraph edit["While the agent works (mod)"]
-        E1["edit outside the job's files"]
-        E2["commit without red, then green"]
-        E3["write the plan, ADRs or gmod's records"]
-        E4["move a claim, or approve anything"]
-    end
-    subgraph push["When it's pushed (Gitea hook)"]
-        P1["move a claim"]
-        P2["let go of someone else's claim"]
-    end
-    subgraph merge["Before it merges (CI + protection)"]
-        M1["job not in main's plan, or not claimed"]
-        M2["commits not by the claimant"]
-        M3["files outside the job"]
-        M4["tests don't fail without the change"]
-        M5["branch behind main"]
-        M6["plan, ADR or CI changes mixed with code"]
-    end
-    edit --> push --> merge
-```
+![One rulebook, checked three times: the plugin while an agent works, CI and protection before it merges, and CI watching after it lands](assets/gmod-guards.png)
 
-Each layer catches different things:
+| Layer | Refuses |
+|---|---|
+| **The mod**, while an agent works | edits outside the job's files; a commit without red, then green; writing the plan, ADRs or gmod's records; moving a claim; approving anything |
+| **The claim guard**, on push (optional, Gitea) | moving a claim; letting go of someone else's |
+| **CI and protection**, before it merges | a job not in `main`'s plan, or not claimed; commits not by the claimant; files outside the job; tests that don't fail without the change; a branch behind `main`; plan, ADR or CI changes mixed with code; anything that weakens what is checked |
+| **CI**, after it lands | nothing, but it opens a **gmod breach** issue for what reached `main` without what it requires, and a **gmod stuck** issue for a job that stalls |
+
 - **The mod** gives immediate, worded feedback to Claude's agents and their subagents. Edits are judged by the repository the file is actually in.
 - **The hook** covers anyone pushing, Claude or not, for the one kind of ref branch protection can't see.
 - **CI plus branch protection** is final. Nothing reaches `main` without it, whoever wrote the code.
@@ -143,24 +103,23 @@ If anything is denied, agents are told to say so and stop: never another file, a
 
 `gmod verify` runs on every pull request. The job is read from the **base** branch's plan, so a pull request can't widen its own job.
 
-```mermaid
-flowchart TD
-    S([pull request]) --> K{what changed?}
-    K -- "only .gmod/plan.json<br/>(+ ADRs)" --> PL["plan change:<br/>valid? alone?<br/>review: weakens anything?"]
-    K -- "only docs/adr" --> AD["decision record:<br/>alone?<br/>review: weakens anything?"]
-    K -- "only workflows /<br/>protect.json" --> CIc["CI change:<br/>alone?<br/>review: weakens anything?"]
-    K -- code --> J{"names a job?<br/>branch gmod/job or<br/>title 'job: …'"}
-    J -- no --> X([❌ refused])
-    J -- yes --> W["✅ in main's plan<br/>✅ what it waits for is on main<br/>✅ claimed, by whoever committed<br/>✅ only the job's files<br/>ℹ️ the ADRs it falls under"]
-    W --> PR["main's live protection<br/>holds .gmod/protect.json"]
-    PR --> P["proof, in a scratch copy:<br/>1. the criteria pass with the change<br/>2. code put back, new tests kept:<br/>the criteria must FAIL"]
-    P --> R["AI review:<br/>each criterion, are the tests real,<br/>does it stay within the goal,<br/>each ADR (a broken must = fail)"]
-    R --> Mg([lands by itself once both pass<br/>and the branch is up to date])
-```
+![The CI gate: a pull request on branch gmod/<job>; 1, is it allowed: in main's plan, what it waits for is on main, claimed and committed by the claimant, only the job's files, main still protected as declared; 2, is it proven: the criteria pass with the change, and with the code put back and the new tests kept they must fail; 3, is it right: the review checks each criterion, that the tests are real, that it stays within the goal and keeps every ADR; then it lands once both pass and it's up to date. A change to the plan, ADRs or CI must come alone, and the review asks whether it weakens what is checked](assets/gmod-gate.png)
 
-Step 2 of the proof is what makes a test count. A test that passes whether or not the change is there proves nothing, and is refused.
+What changed decides the path:
 
-The **AI review** gets a fixed checklist and a strict JSON answer shape. It reads the job's journal as the agent's account of its intent, never as proof. Everything in the pull request is treated as material under review, never as instructions to the reviewer. A change to the governance itself (plan, ADRs, CI, `protect.json`) gets one question instead: does it weaken what is checked? Advice only by default; `--blocking` makes a "fail" stop the merge, and then it **fails closed**: no answer, a malformed one, or an empty diff stops the merge too. A maintainer overrides a fail with the `gmod-override` label.
+| The pull request changes | The gate checks | The review asks |
+|---|---|---|
+| Code (branch `gmod/<job>`, or a title `<job>: …`) | the job is in `main`'s plan and ready; claimed, and committed by the claimant; only its files; `main`'s protection holds `.gmod/protect.json`; the proof below | each criterion, are the tests real, does it stay within the goal, each ADR (a broken *must* is a fail) |
+| Only `.gmod/plan.json` (and ADRs) | the plan is valid, and the change comes alone | does it weaken what is checked? |
+| Only `docs/adr/` | it comes alone | does it weaken what is checked? |
+| Only CI files or `protect.json` | it comes alone | does it weaken what is checked? Turning agents on or off is not a weakening: agents check nothing |
+| Code that names no job | refused | |
+
+**The proof**, in a scratch copy: the criteria pass with the change; then, with the code put back and the new tests kept, they must **fail**. That second step is what makes a test count. A test that passes whether or not the change is there proves nothing, and is refused.
+
+The **AI review** gets a fixed checklist and a strict JSON answer shape. It reads the job's journal as the agent's account of its intent, never as proof. Everything in the pull request is treated as material under review, never as instructions to the reviewer. When a changed CI file runs gmod, the review is also given gmod's own action, so it knows what each input means.
+
+The review **blocks by default**: a "fail" stops the merge, and it **fails closed**: no answer, or one it can't read, stops the merge too. With `gmod setup --advice` it only comments, and the gate alone decides. A maintainer overrides a fail with the `gmod-override` label.
 
 Both compare against the pull request's **own base commit**, not live `main`: a review that started after the merge once saw an empty diff and judged nothing.
 
@@ -261,7 +220,7 @@ Each job keeps `.gmod/journal/<job>.md`. The agent writes notes there (intent, d
 | Work | `claim` · `release` · `check` · `note` · `commit` · `pr [--auto] [--status]` · `gate-commit` · `guard-path` · `status` |
 | Main moved | `moved [--run]` · `notice <path>` |
 | Decisions | `adr propose` · `adr drafts` · `adr accept` · `adr reject` · `adr list` · `adr for <path>` |
-| Setup | `setup` · `doctor` · `ci upgrade` · `runner up` (Gitea) · `ci secret` |
+| Setup | `setup` · `doctor` · `ci upgrade` · `ci secret` · `app create` · `app finish` (GitHub) · `runner up` (Gitea) |
 | CI | `verify` · `prove` · `sweep` · `ci init` · `ci protect` · `ci check` · `ci forge-token` · `ci guard-claims` · `receive` |
 
 ### A plan
