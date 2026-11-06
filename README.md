@@ -1,6 +1,6 @@
 # gmod
 
-**You say yes twice. Agents ship the rest.**
+**You set the plan and the rules. Agents do the rest.**
 
 Plan your work with Claude. Agents build it, prove it works, and land it on `main`, working beside you or on their own in CI.
 
@@ -12,13 +12,13 @@ Plan your work with Claude. Agents build it, prove it works, and land it on `mai
 
 ## How it works
 
-![gmod in four steps: you approve the plan and its rules; agents build each job, its test failing first and then passing; CI proves it again and an AI reviewer checks the tests are real; green work lands on main by itself](docs/assets/gmod-overview.png)
+![gmod in four steps: you set the plan and the rules; agents build each job, its test failing first and then passing; CI proves it again and an AI reviewer checks the tests are real; green work lands on main by itself](docs/assets/gmod-overview.png)
 
-## Your two yeses matter most
+## The plan and the rules matter most
 
-![Your two yeses decide everything; the rest enforces them. Yes to the plan: small jobs, the files each may touch, done-when criteria each proven by a command, and the order. Yes to the rules: a data format, a boundary, a library or a security rule, with must and should. From then on, agents get only their job, its files and the rules that cover them, the gate proves the criteria, the review answers each rule, and agents can't change the plan or the rules](docs/assets/gmod-plan.png)
+![You set the plan and the rules; everything after enforces them. The plan: small jobs, the files each may touch, done-when criteria each proven by a command, and the order. The rules: a data format, a boundary, a library or a security rule, with must and should. From then on, agents get only their job, its files and the rules that cover them, the gate proves the criteria, the review answers each rule, and agents can't change the plan or the rules](docs/assets/gmod-plan.png)
 
-Everything after your yes enforces what you approved, nothing more. The gate proves exactly the criteria in the plan, so a vague criterion gets you vaguely proven work, and a rule you never wrote is never enforced. Take the planning session seriously, and settle the rules that shape everything (data formats, boundaries, libraries, security) before agents start. How: [planning and rules](docs/planning.md).
+Everything after enforces the plan and the rules you set, nothing more. The gate proves exactly the criteria in the plan, so a vague criterion gets you vaguely proven work, and a rule you never wrote is never enforced. Take the planning session seriously, and settle the rules that shape everything (data formats, boundaries, libraries, security) before agents start. How: [planning and rules](docs/planning.md).
 
 ## Install
 

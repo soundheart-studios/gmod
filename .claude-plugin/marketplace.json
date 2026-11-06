@@ -1,6 +1,6 @@
 {
   "name": "gmod",
-  "description": "gmod: you say yes twice, agents ship the rest.",
+  "description": "gmod: you set the plan and the rules, agents do the rest.",
   "owner": { "name": "Soundheart Studios" },
   "plugins": [
     {
