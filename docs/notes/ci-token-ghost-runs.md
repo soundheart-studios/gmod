@@ -41,6 +41,6 @@ Leaning: the App, when agents need their own identity anyway; deleting them unti
 Not seen there so far, but neither has had agents in CI yet. Check each when agents come to it:
 
 - **GitLab:** a job token can't push or open merge requests at all, so gmod already uses a person's token (`GMOD_GITLAB_TOKEN`), and what it pushes starts real pipelines (seen: catch-ups on gmod-test-gl). Expect no ghosts; confirm with an agent-opened merge request.
-- **Gitea:** what the Actions token pushes starts no run (seen: gmod brings branches up to date with `GMOD_FORGE_TOKEN` for that reason). No ghost runs in demo's or gtrader's run lists so far. Confirm that a pull request opened with the Actions token leaves nothing behind, and that one opened with the person's token starts its run.
+- **Gitea:** what the Actions token pushes starts no run (seen: gmod brings branches up to date with `GMOD_FORGE_TOKEN` for that reason). No ghost runs seen on the Gitea test repositories so far. Confirm that a pull request opened with the Actions token leaves nothing behind, and that one opened with the person's token starts its run.
 
 Test for each: open a pull request with CI's own token, list runs for its branch (`gh run list`, the GitLab pipelines API, Gitea's `actions/runs`), and note any run with no jobs.

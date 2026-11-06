@@ -1,7 +1,7 @@
 // The AI review against a real model. Opt in: GMOD_REVIEW_URL (an
 // OpenAI-compatible /v1 address) or ANTHROPIC_API_KEY. Skipped otherwise.
 //
-//   GMOD_REVIEW_URL=http://ai.local:8080/v1 node --test test/review-live.test.mjs
+//   GMOD_REVIEW_URL=http://git.example.lan:8080/v1 node --test test/review-live.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';

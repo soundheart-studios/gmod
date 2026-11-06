@@ -56,10 +56,10 @@ test('claims and decisions', () => {
 test('merging a pull request by hand is caught; gmod pr --auto is not', () => {
   expect(mergesPr('gh pr merge 3 --merge')).toBe(true)
   expect(mergesPr('tea pr merge 3')).toBe(true)
-  expect(mergesPr('curl -X POST -H "authorization: token $(cat ~/.config/gmod/gitea-token)" http://ai.local:3000/api/v1/repos/acme/gtrader/pulls/3/merge -d \'{"Do":"merge"}\'')).toBe(true)
+  expect(mergesPr('curl -X POST -H "authorization: token $(cat ~/.config/gmod/gitea-token)" http://git.example.lan:3000/api/v1/repos/acme/shop/pulls/3/merge -d \'{"Do":"merge"}\'')).toBe(true)
   expect(mergesPr('node ~/gmod/bin/gmod.mjs pr --auto')).toBe(false)
   expect(mergesPr('git merge origin/main')).toBe(false)
-  expect(mergesPr('curl http://ai.local:3000/api/v1/repos/acme/gtrader/pulls/3')).toBe(false)
+  expect(mergesPr('curl http://git.example.lan:3000/api/v1/repos/acme/shop/pulls/3')).toBe(false)
   expect(mergesPr("git commit -m 'pr --auto: like gh pr merge --auto, the forge merges on green (a POST to /pulls/4/merge)'")).toBe(false)
   expect(mergesPr('cd x && gh pr merge 3')).toBe(true)
 })

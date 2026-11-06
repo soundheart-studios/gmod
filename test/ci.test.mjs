@@ -26,8 +26,8 @@ test('the forge, from origin', () => {
   const cases = [
     ['git@github.com:acme/app.git', { kind: 'github', owner: 'acme', repo: 'app' }],
     ['https://github.com/acme/app', { kind: 'github', owner: 'acme', repo: 'app' }],
-    ['ssh://acme@ai.local:2222/acme/gmod-demo.git', { kind: 'gitea', owner: 'acme', repo: 'gmod-demo', host: 'ai.local' }],
-    ['http://ai.local:3000/acme/gmod-demo.git', { kind: 'gitea', owner: 'acme', repo: 'gmod-demo', web: 'http://ai.local:3000' }],
+    ['ssh://acme@git.example.lan:2222/acme/gmod-demo.git', { kind: 'gitea', owner: 'acme', repo: 'gmod-demo', host: 'git.example.lan' }],
+    ['http://git.example.lan:3000/acme/gmod-demo.git', { kind: 'gitea', owner: 'acme', repo: 'gmod-demo', web: 'http://git.example.lan:3000' }],
   ];
   for (const [url, want] of cases) {
     const dir = repo(url);
@@ -68,8 +68,8 @@ test('the workflow: GitHub, gmod from a pinned repo, Claude reviewing, comment o
 });
 
 test('the workflow: Gitea, a host runner, gmod on the host, a local model, blocking', () => {
-  const y = workflow({ forge: 'gitea', runsOn: 'ai-local', gmod: { path: '/home/g/gmod-tool' }, reviewer: { kind: 'local', url: 'http://127.0.0.1:8080/v1', model: 'qwen' }, blocking: true });
-  assert.match(y, /runs-on: ai-local/);
+  const y = workflow({ forge: 'gitea', runsOn: 'lan', gmod: { path: '/home/g/gmod-tool' }, reviewer: { kind: 'local', url: 'http://127.0.0.1:8080/v1', model: 'qwen' }, blocking: true });
+  assert.match(y, /runs-on: lan/);
   assert.match(y, /GMOD_HOME: \/home\/g\/gmod-tool/);
   assert.doesNotMatch(y, /setup-node/, 'the host has node');
   assert.match(y, /GMOD_REVIEW_URL: http:\/\/127\.0\.0\.1:8080\/v1/);
@@ -85,16 +85,16 @@ test('the workflow: no reviewer means no review job', () => {
 });
 
 test('gmod ci init writes the workflow and CODEOWNERS, and never overwrites', () => {
-  const dir = repo('ssh://acme@ai.local:2222/acme/gmod-demo.git');
+  const dir = repo('ssh://acme@git.example.lan:2222/acme/gmod-demo.git');
   try {
-    const r = gmod(dir, ['ci', 'init', '--runs-on', 'ai-local', '--gmod-home', '/g', '--reviewer', 'local', '--review-url', 'http://127.0.0.1:8080/v1', '--owners', '@acme']);
+    const r = gmod(dir, ['ci', 'init', '--runs-on', 'lan', '--gmod-home', '/g', '--reviewer', 'local', '--review-url', 'http://127.0.0.1:8080/v1', '--owners', '@acme']);
     assert.equal(r.code, 0, r.err);
-    assert.match(readFileSync(join(dir, '.gitea/workflows/gmod.yml'), 'utf8'), /runs-on: ai-local/);
+    assert.match(readFileSync(join(dir, '.gitea/workflows/gmod.yml'), 'utf8'), /runs-on: lan/);
     // The plan and the workflow both belong to the owners: a pull request
     // runs its own copy of the workflow, so it could weaken its own gate.
     assert.equal(readFileSync(join(dir, '.gitea/CODEOWNERS'), 'utf8'), '/.gmod/ @acme\n/.gitea/ @acme\n');
     assert.match(r.out, /wrote \.gitea\/workflows\/gmod\.yml/);
-    const again = gmod(dir, ['ci', 'init', '--runs-on', 'ai-local', '--gmod-home', '/g']);
+    const again = gmod(dir, ['ci', 'init', '--runs-on', 'lan', '--gmod-home', '/g']);
     assert.equal(again.code, 1);
     assert.match(again.err, /already exists.*--force/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -173,27 +173,27 @@ test('gmod ci check: says what is in place and what is missing', async () => {
   const dir = repo(`${api.url}/acme/demo.git`);
   try {
     writeFileSync(join(dir, 'tok'), 'secret-token\n');
-    gmod(dir, ['ci', 'init', '--runs-on', 'ai-local', '--gmod-home', '/g', '--reviewer', 'local', '--review-url', `${api.url}/v1`]);
+    gmod(dir, ['ci', 'init', '--runs-on', 'lan', '--gmod-home', '/g', '--reviewer', 'local', '--review-url', `${api.url}/v1`]);
     let r = await spawnSyncAsync(dir, ['ci', 'check', '--token-file', join(dir, 'tok')]);
     assert.equal(r.code, 1, 'no runner yet');
     assert.match(r.out, /✅ the workflow is in \.gitea\/workflows\/gmod\.yml/);
     assert.match(r.out, /✅ main requires the gate and up-to-date branches/);
     assert.match(r.out, /✅ the reviewer answers at/);
-    assert.match(r.out, /❌ no runner with the label ai-local/);
-    state.runners = [{ name: 'box', status: 'online', labels: [{ name: 'ai-local' }] }];
+    assert.match(r.out, /❌ no runner with the label lan/);
+    state.runners = [{ name: 'box', status: 'online', labels: [{ name: 'lan' }] }];
     r = await spawnSyncAsync(dir, ['ci', 'check', '--token-file', join(dir, 'tok')]);
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /✅ runner box \(online\) has the label ai-local/);
+    assert.match(r.out, /✅ runner box \(online\) has the label lan/);
     // A runner registered for the whole instance counts too.
     state.runners = [];
-    state.instanceRunners = [{ name: 'shared', status: 'online', labels: [{ name: 'ai-local' }] }];
+    state.instanceRunners = [{ name: 'shared', status: 'online', labels: [{ name: 'lan' }] }];
     r = await spawnSyncAsync(dir, ['ci', 'check', '--token-file', join(dir, 'tok')]);
     assert.equal(r.code, 0, r.out);
-    assert.match(r.out, /✅ runner shared \(online\) has the label ai-local \(the instance's\)/);
+    assert.match(r.out, /✅ runner shared \(online\) has the label lan \(the instance's\)/);
     // A token without read:admin can't see those: say so, don't say there is none.
     state.notAdmin = true;
     r = await spawnSyncAsync(dir, ['ci', 'check', '--token-file', join(dir, 'tok')]);
-    assert.match(r.out, /❌ no runner with the label ai-local in .*; the instance's runners need a token with read:admin/);
+    assert.match(r.out, /❌ no runner with the label lan in .*; the instance's runners need a token with read:admin/);
   } finally { api.server.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -213,7 +213,7 @@ test('gmod pr: the token from ~/.config, the address from git config, titled by 
   const api = await fakeGitea({});
   const top = mkdtempSync(join(tmpdir(), 'gmod-pr-'));
   try {
-    // origin is ssh, as on ai.local; a stand-in ssh runs git on a local bare repository.
+    // origin is ssh, as on git.example.lan; a stand-in ssh runs git on a local bare repository.
     const bare = join(top, 'acme', 'demo.git');
     execFileSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
     const ssh = join(top, 'ssh');
@@ -268,7 +268,7 @@ test('gmod pr: the token from ~/.config, the address from git config, titled by 
 });
 
 test('the workflow compares against the pull request base, and checks what landed', () => {
-  const y = workflow({ forge: 'gitea', runsOn: 'ai-local', gmod: { path: '/g' }, reviewer: { kind: 'local', url: 'http://m/v1' }, blocking: true });
+  const y = workflow({ forge: 'gitea', runsOn: 'lan', gmod: { path: '/g' }, reviewer: { kind: 'local', url: 'http://m/v1' }, blocking: true });
   assert.match(y, /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
   assert.match(y, /verify --base "\$\{BASE_SHA:-origin\/\$BASE\}"/);
   assert.match(y, /BASE_SHA: .*\n {10}GMOD_TOKEN: \$\{\{ secrets\.GMOD_FORGE_TOKEN \}\}\n {6}- name: Post it/);
@@ -281,7 +281,7 @@ test('the workflow compares against the pull request base, and checks what lande
 });
 
 test("the workflow installs the project's own dependencies before the gate and the review", () => {
-  const y = workflow({ forge: 'gitea', runsOn: 'ai-local', gmod: { path: '/g' }, reviewer: { kind: 'local', url: 'http://m/v1' }, setup: 'uv sync --frozen\nnpm --prefix web ci' });
+  const y = workflow({ forge: 'gitea', runsOn: 'lan', gmod: { path: '/g' }, reviewer: { kind: 'local', url: 'http://m/v1' }, setup: 'uv sync --frozen\nnpm --prefix web ci' });
   const step = '      - name: Install project dependencies\n        run: |\n          uv sync --frozen\n          npm --prefix web ci\n';
   assert.equal(y.split(step).length, 3, 'once in the gate, once in the review');
   assert.ok(y.indexOf(step) < y.indexOf('The deterministic gate'));
@@ -568,7 +568,7 @@ test("a Gitea token comes from tea's login for that host when there is one", () 
     '  default: true',
     '  user: me',
     '- name: home',
-    "  url: 'http://ai.local:3000'",
+    "  url: 'http://git.example.lan:3000'",
     '  token: "home-token"',
     'preferences:',
     '  editor: false',
@@ -576,9 +576,9 @@ test("a Gitea token comes from tea's login for that host when there is one", () 
   try {
     assert.deepEqual(teaLogins(readFileSync(config, 'utf8')).map(l => [l.name, l.token, l.default]), [['work', 'work-token', true], ['home', 'home-token', false]]);
     const none = join(dir, 'missing');
-    assert.equal(giteaToken({ env: {}, teaConfigs: [config], fallback: none, web: 'http://ai.local:3000' }), 'home-token', 'the login for that host');
+    assert.equal(giteaToken({ env: {}, teaConfigs: [config], fallback: none, web: 'http://git.example.lan:3000' }), 'home-token', 'the login for that host');
     assert.equal(giteaToken({ env: {}, teaConfigs: [config], fallback: none }), 'work-token', 'no host known: the default login');
-    assert.equal(giteaToken({ env: { GITEA_TOKEN: 'env' }, teaConfigs: [config], fallback: none, web: 'http://ai.local:3000' }), 'env', 'GITEA_TOKEN still wins');
+    assert.equal(giteaToken({ env: { GITEA_TOKEN: 'env' }, teaConfigs: [config], fallback: none, web: 'http://git.example.lan:3000' }), 'env', 'GITEA_TOKEN still wins');
     const own = join(dir, 'gitea-token');
     writeFileSync(own, 'file-token\n');
     assert.equal(giteaToken({ env: {}, teaConfigs: [none], fallback: own }), 'file-token', "gmod's own file, when tea has nothing");
