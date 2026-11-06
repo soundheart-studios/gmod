@@ -35,6 +35,7 @@ async function model(reply) {
       const r = reply(b);
       if (r.status) { res.writeHead(r.status); return res.end(r.body ?? '{}'); }
       res.writeHead(200, { 'content-type': 'application/json' });
+      if (r.cutOff) return res.end(JSON.stringify({ model: 'stand-in', choices: [{ finish_reason: 'length', message: { content: '{"summary": "Adds' } }] }));
       res.end(JSON.stringify({ model: 'stand-in', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(r) } }] }));
     });
   });
@@ -121,6 +122,31 @@ test('a reviewer API without JSON schemas is asked in plain JSON mode', async ()
     assert.match(r.out, /A fail stops the merge/, 'a blocking review says it blocks');
     assert.match(m.asked[1].messages[0].content, /matching this JSON schema/);
     assert.equal(m.asked[1].model, 'deepseek-flash');
+  } finally { m.close(); r0.done(); }
+});
+
+test('a reviewer cut off by its token limit is asked once more with twice the room', async () => {
+  const r0 = repo();
+  const pass = { verdict: 'pass', evidence: 'src/sum.mjs:1' };
+  const answer = { summary: 'Adds sum.', criteria: [{ criterion: 'adds', ...pass }], tests_are_real: pass, stays_within_goal: pass, adrs: [], overall: 'pass' };
+  // Like a thinking model: its reasoning spends the first limit.
+  const m = await model(b => (b.max_tokens < 32000 ? { cutOff: true } : answer));
+  try {
+    r0.g('switch', '-q', '-c', 'gmod/add-sum');
+    mkdirSync(join(r0.dir, 'src'));
+    writeFileSync(join(r0.dir, 'src', 'sum.mjs'), 'export const sum = (a, b) => a + b;\n');
+    r0.g('add', '-A'); r0.g('commit', '-q', '-m', 'add-sum: adds');
+    const r = await review(r0.dir, { GMOD_REVIEW_URL: m.url }, '--branch', 'gmod/add-sum');
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /### gmod review: pass/);
+    assert.deepEqual(m.asked.map(b => b.max_tokens), [16000, 32000]);
+    // The limit is the repository's to set; an answer still cut off says why.
+    const set = await review(r0.dir, { GMOD_REVIEW_URL: m.url, GMOD_REVIEW_MAX_TOKENS: '4000' }, '--branch', 'gmod/add-sum');
+    assert.equal(set.code, 1, set.out);
+    assert.match(set.out, /stopped: length/);
+    // Each ask doubles once and no further.
+    const later = m.asked.slice(2).map(b => b.max_tokens);
+    assert.ok(later.length >= 2 && later.every((t, i) => t === (i % 2 ? 8000 : 4000)), later.join(','));
   } finally { m.close(); r0.done(); }
 });
 

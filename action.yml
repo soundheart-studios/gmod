@@ -10,6 +10,9 @@ inputs:
   reviewer-model:
     description: The reviewer's model, e.g. deepseek-flash.
     default: ''
+  reviewer-max-tokens:
+    description: Room an OpenAI-compatible reviewer has to answer in (thinking models reason inside it). Default 16000; an answer cut off by it is asked again once with twice this.
+    default: ''
   reviewer-key:
     description: The reviewer's key. With no reviewer-url, it is an Anthropic API key.
     default: ''
@@ -69,6 +72,7 @@ runs:
         GMOD_FORGE_TOKEN: ${{ inputs.forge-token }}
         GMOD_REVIEW_URL: ${{ inputs.reviewer-url }}
         GMOD_REVIEW_MODEL: ${{ inputs.reviewer-model }}
+        GMOD_REVIEW_MAX_TOKENS: ${{ inputs.reviewer-max-tokens }}
         GMOD_REVIEW_KEY: ${{ inputs.reviewer-url != '' && inputs.reviewer-key || '' }}
         ANTHROPIC_API_KEY: ${{ inputs.reviewer-url == '' && inputs.reviewer-key || '' }}
         GMOD_REVIEW_MODE: ${{ inputs.blocking == 'false' && 'comment' || '' }}

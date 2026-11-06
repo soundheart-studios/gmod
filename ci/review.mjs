@@ -25,6 +25,10 @@ const LOCAL = process.env.GMOD_REVIEW_URL?.replace(/\/$/, '');
 const MODEL = process.env.GMOD_REVIEW_MODEL || (LOCAL ? '' : 'claude-opus-5-5');
 const ADVICE_ONLY = process.env.GMOD_REVIEW_MODE === 'comment';
 const EFFORT = process.env.GMOD_REVIEW_EFFORT || 'medium';
+// Room for a reviewer behind an OpenAI-compatible API to answer in. Thinking
+// models spend part of it reasoning; an answer cut off by it is asked again,
+// once, with twice the room.
+const MAX_TOKENS = Number(process.env.GMOD_REVIEW_MAX_TOKENS) > 0 ? Math.floor(Number(process.env.GMOD_REVIEW_MAX_TOKENS)) : 16000;
 const DIFF_LIMIT = 600_000;
 const ADR_LIMIT = 200_000;
 // How a local reviewer is asked for JSON: 'schema', or 'object' once it turns
@@ -138,12 +142,30 @@ async function ask(system, schema, input) {
   if (LOCAL) {
     // A JSON schema where the API takes one; plain JSON mode, with the schema
     // in the instructions, where it doesn't (DeepSeek, among others).
+    const once = await askLocal(system, schema, input, MAX_TOKENS);
+    return once.finish === 'length' ? askLocal(system, schema, input, MAX_TOKENS * 2) : once;
+  }
+  const { default: Anthropic } = await import('@anthropic-ai/sdk');
+  const response = await new Anthropic().beta.messages.create({
+    model: MODEL,
+    max_tokens: 16000,
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    output_config: { effort: EFFORT, format: { type: 'json_schema', schema } },
+    system,
+    messages: [{ role: 'user', content: input }],
+  });
+  return { text: response.content.find(b => b.type === 'text')?.text ?? '', model: response.model, refused: response.stop_reason === 'refusal' };
+}
+
+async function askLocal(system, schema, input, maxTokens) {
+  {
     const call = format => fetch(`${LOCAL}/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(process.env.GMOD_REVIEW_KEY ? { authorization: `Bearer ${process.env.GMOD_REVIEW_KEY}` } : {}) },
       body: JSON.stringify({
         ...(MODEL ? { model: MODEL } : {}),
-        max_tokens: 8000,
+        max_tokens: maxTokens,
         response_format: format === 'schema' ? { type: 'json_schema', json_schema: { name: 'review', strict: true, schema } } : { type: 'json_object' },
         messages: [
           { role: 'system', content: format === 'schema' ? system : `${system}\n\nAnswer with one JSON object, and nothing else, matching this JSON schema:\n${JSON.stringify(schema)}` },
@@ -170,17 +192,6 @@ async function ask(system, schema, input) {
     if (process.env.GMOD_REVIEW_DEBUG) console.error(JSON.stringify({ finish: choice.finish_reason, usage: body.usage, content: choice.message?.content?.slice(0, 2000), reasoning: choice.message?.reasoning_content?.slice(-1000) }, null, 2));
     return { text, model: body.model || MODEL || 'a local model', refused: false, finish: choice.finish_reason };
   }
-  const { default: Anthropic } = await import('@anthropic-ai/sdk');
-  const response = await new Anthropic().beta.messages.create({
-    model: MODEL,
-    max_tokens: 16000,
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
-    output_config: { effort: EFFORT, format: { type: 'json_schema', schema } },
-    system,
-    messages: [{ role: 'user', content: input }],
-  });
-  return { text: response.content.find(b => b.type === 'text')?.text ?? '', model: response.model, refused: response.stop_reason === 'refusal' };
 }
 
 // Ask, read the JSON, and ask once more if a local model answered in prose.
