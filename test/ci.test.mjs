@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { detectForge, giteaToken, openPr, protectionMatches, setSecret, teaLogins, workflow } from '../lib/ci.mjs';
+import { detectForge, giteaToken, openPr, protectionMatches, publishDecision, setSecret, teaLogins, workflow } from '../lib/ci.mjs';
 
 const GMOD = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'gmod.mjs');
 
@@ -454,6 +454,42 @@ test('on GitHub, opening a pull request to land on green never merges it from he
     assert.equal(r.landing, 'the gmod action');
     const calls = readFileSync(log, 'utf8').trim().split('\n');
     assert.ok(calls.some(c => c.startsWith('pr create')), calls.join('; '));
+    assert.ok(!calls.some(c => c.startsWith('pr merge')), `nothing merges from here: ${calls.join('; ')}`);
+  } finally {
+    if (before === undefined) delete process.env.GMOD_GH; else process.env.GMOD_GH = before;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an approved plan goes out on a gmod/ branch of its own, to land on green with nobody merging it', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'gmod-plan-pr-'));
+  const bare = join(root, 'origin.git');
+  const dir = join(root, 'work');
+  const g = (...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).trim();
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
+  execFileSync('git', ['clone', '-q', bare, dir], { stdio: 'ignore' });
+  g('config', 'user.email', 'a@x.io'); g('config', 'user.name', 'a');
+  mkdirSync(join(dir, '.gmod'));
+  writeFileSync(join(dir, '.gmod', 'plan.json'), JSON.stringify({ checks: {}, jobs: [] }));
+  g('add', '-A'); g('commit', '-q', '-m', 'seed'); g('push', '-q', 'origin', 'main');
+  // What approve leaves: the plan committed on main, here only.
+  writeFileSync(join(dir, '.gmod', 'plan.json'), JSON.stringify({ checks: { hi: 'true' }, jobs: [{ id: 'hi', goal: 'Hi', files: ['hi'], done_when: [{ text: 'hi', check: 'hi' }] }] }));
+  g('commit', '-q', '-am', 'plan: add hi');
+  const log = join(root, 'gh.log');
+  const fake = join(root, 'gh');
+  writeFileSync(fake, `#!/bin/sh\necho "$@" >> '${log}'\ncat >/dev/null\necho https://github.com/acme/app/pull/9\n`, { mode: 0o755 });
+  const before = process.env.GMOD_GH;
+  process.env.GMOD_GH = fake;
+  try {
+    await assert.rejects(publishDecision(dir, { branch: 'plan/hi', forge: { kind: 'github', owner: 'acme', repo: 'app' } }), /gmod\/ branch/, 'only gmod/ branches land by themselves');
+    const r = await publishDecision(dir, { branch: 'gmod/plan-abc', forge: { kind: 'github', owner: 'acme', repo: 'app' } });
+    assert.equal(r.url, 'https://github.com/acme/app/pull/9');
+    assert.equal(r.kind, 'plan');
+    assert.equal(r.landing, 'the gmod action');
+    assert.equal(execFileSync('git', ['-C', bare, 'log', '-1', '--format=%s', 'gmod/plan-abc'], { encoding: 'utf8' }).trim(), 'plan: add hi', 'the plan commit is on the branch');
+    assert.equal(g('branch', '--show-current'), 'main', 'the person stays where they were');
+    const calls = readFileSync(log, 'utf8').trim().split('\n');
+    assert.ok(calls.some(c => c.startsWith('pr create') && c.includes('--head gmod/plan-abc') && c.includes('--title plan: add hi')), calls.join('; '));
     assert.ok(!calls.some(c => c.startsWith('pr merge')), `nothing merges from here: ${calls.join('; ')}`);
   } finally {
     if (before === undefined) delete process.env.GMOD_GH; else process.env.GMOD_GH = before;

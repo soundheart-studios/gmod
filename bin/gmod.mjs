@@ -120,6 +120,23 @@ function webOf(root, url) {
   try { return ci.detectForge(root, { url }).web ?? undefined; } catch { return undefined; }
 }
 
+// After a person's yes: push it on its own gmod/ branch and open the pull
+// request that lands on green. With no forge (a local origin) or --no-pr, the
+// commit stays where it is; a forge that refuses leaves the commit and says how
+// to try again.
+async function publish(root, flags, branch) {
+  if (flags['no-pr']) return [];
+  let forge;
+  try { forge = ci.detectForge(root, { url: flags.url }); } catch { return []; }
+  try {
+    const main = core.planFromDisk(root)?.main ?? 'main';
+    const pr = await ci.publishDecision(root, { branch, url: flags.url, main, forge, token: forge.kind === 'gitea' ? ci.giteaToken({ file: flags['token-file'], web: forge.web }) : undefined });
+    return [`${pr.existed ? 'already open' : 'opened'}: ${pr.url}`, 'lands by itself once its checks pass'];
+  } catch (e) {
+    return [`couldn't open its pull request (${e.message.split('\n')[0]}): git push -u origin HEAD:${branch}, then gmod pr --branch ${branch} --auto`];
+  }
+}
+
 function json(text, what) {
   try {
     return JSON.parse(text ?? '');
@@ -346,7 +363,8 @@ async function main() {
     }
     case 'approve': {
       const r = core.approve(root);
-      return out(flags, r, `approved: ${r.summary} (commit ${r.commit} on ${r.branch || 'a detached HEAD'})`);
+      const lines = await publish(root, flags, `gmod/plan-${r.commit}`);
+      return out(flags, { ...r, published: lines }, [`approved: ${r.summary} (commit ${r.commit} on ${r.branch || 'a detached HEAD'})`, ...lines].join('\n'));
     }
     case 'reject': {
       const r = core.reject(root, args.join(' '));
@@ -395,7 +413,7 @@ async function main() {
   }
 }
 
-function runAdr(root, sub, rest, flags) {
+async function runAdr(root, sub, rest, flags) {
   if (sub === 'propose') {
     const d = adr.proposeAdr(root, json(rest[0], 'the draft'));
     return out(flags, d, `drafted ADR ${d.draft}: ${d.title}. A person accepts it: gmod adr accept ${d.draft}`);
@@ -406,7 +424,8 @@ function runAdr(root, sub, rest, flags) {
   }
   if (sub === 'accept') {
     const r = adr.acceptAdr(root, rest[0]);
-    return out(flags, r, `accepted ADR ${r.id}: ${r.title}${r.supersedes ? ` (supersedes ${r.supersedes})` : ''}`);
+    const lines = await publish(root, flags, `gmod/adr-${r.id}`);
+    return out(flags, { ...r, published: lines }, [`accepted ADR ${r.id}: ${r.title}${r.supersedes ? ` (supersedes ${r.supersedes})` : ''}`, ...lines].join('\n'));
   }
   if (sub === 'reject') {
     const r = adr.rejectAdr(root, rest[0], rest.slice(1).join(' '));
