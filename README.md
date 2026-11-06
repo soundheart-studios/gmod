@@ -2,6 +2,8 @@
 
 **You set the plan and the rules. Agents do the rest.**
 
+> **Beta.** gmod is new, and we're excited to share it early. The core works and is proven on GitHub, GitLab and Gitea; some paths are still young. Read [the limits](docs/limits.md), and [tell us what breaks](https://github.com/soundheart-studios/gmod/issues).
+
 Plan your work with Claude. Agents build it, prove it works, and land it on `main`, working beside you or on their own in CI.
 
 ![Why gmod. AI writes code fast; gmod makes sure it's right. With AI agents on their own, you're the safety net: you read every change or merge and hope, tests pass whether the code works or not, two agents' work collides and main breaks, and nothing moves unless you're there to merge. With gmod, the system is the safety net: you approve the plan once and agents do the jobs, every test must fail first and then pass, CI proves it all again so main stays green, and work lands while you're away; you hear when it's stuck](docs/assets/gmod-why.png)
