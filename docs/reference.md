@@ -64,7 +64,7 @@ sequenceDiagram
     C->>G: edit_job
     You->>G: Approve
     G->>G: write .gmod/plan.json, commit it alone ("plan: add …")
-    G->>F: plan-only pull request
+    You->>F: push it from a plan branch, gmod pr --auto (or ask Claude)
     F-->>You: gate passes, the review checks it weakens nothing, it lands
 ```
 

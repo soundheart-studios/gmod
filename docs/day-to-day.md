@@ -2,8 +2,8 @@
 
 | You | gmod |
 |---|---|
-| `/gmod:plan` + what you want, then **Approve** | Writes `.gmod/plan.json` as a governance pull request; it lands on green |
-| `/gmod:adr` + a decision, then **Accept** | The rule binds every job whose files it covers |
+| `/gmod:plan` + what you want, then **Approve** | Commits `.gmod/plan.json` alone; pushed from a branch with `gmod pr --auto`, it lands on green ([planning](planning.md)) |
+| `/gmod:adr` + a decision, then **Accept** | Commits the rule alone, to land the same way; it binds every job whose files it covers |
 | `/gmod:work`, or "work the ready jobs" | Agents on your machine claim, prove, commit and open pull requests; they land on green |
 | Nothing | With agents in CI, each landing starts agents for the jobs it made ready |
 | Nothing | After each landing, other open jobs catch up with `main` and land in turn |

@@ -3,7 +3,7 @@
 - **A plan** is a list of small **jobs**. Each says what it achieves, which files it may touch, and the check that proves it's done.
 - **Rules** (architecture decision records, ADRs) bind every job they cover. The AI review holds each pull request to them.
 - **Every job proves itself:** its check fails before the change and passes after. CI proves it again on its own, an AI reviewer reads it (if you have one), and then it merges on green.
-- **You only approve.** Plans and rules are yours. Everything after is agents and CI.
+- **You only approve, and that's where it counts.** Plans and rules are yours; everything after is agents and CI enforcing them. See [planning and rules](planning.md).
 
 ## A job's life
 

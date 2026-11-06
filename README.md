@@ -14,6 +14,12 @@ Plan your work with Claude. Agents build it, prove it works, and land it on `mai
 
 ![gmod in four steps: you approve the plan and its rules; agents build each job, its test failing first and then passing; CI proves it again and an AI reviewer checks the tests are real; green work lands on main by itself](docs/assets/gmod-overview.png)
 
+## Your two yeses matter most
+
+![Your two yeses decide everything; the rest enforces them. Yes to the plan: small jobs, the files each may touch, done-when criteria each proven by a command, and the order. Yes to the rules: a data format, a boundary, a library or a security rule, with must and should. From then on, agents get only their job, its files and the rules that cover them, the gate proves the criteria, the review answers each rule, and agents can't change the plan or the rules](docs/assets/gmod-plan.png)
+
+Everything after your yes enforces what you approved, nothing more. The gate proves exactly the criteria in the plan, so a vague criterion gets you vaguely proven work, and a rule you never wrote is never enforced. Take the planning session seriously, and settle the rules that shape everything (data formats, boundaries, libraries, security) before agents start. How: [planning and rules](docs/planning.md).
+
 ## Install
 
 In Claude Code:
@@ -33,7 +39,7 @@ Open Claude Code in your project and say what you want:
 /gmod:plan  a blog with tags and reading time
 ```
 
-Claude drafts the plan and you approve it. Then connect your CI:
+Claude interviews you and drafts the plan; you read its assumptions and approve it ([how to plan well](docs/planning.md)). Then connect your CI:
 
 ```
 /gmod:ci
@@ -60,6 +66,7 @@ Agents in CI always use an API key, never a person's Claude sign-in. More: [sett
 ## Learn more
 
 - [How it works](docs/how-it-works.md)
+- [Planning and rules: where your judgment goes](docs/planning.md)
 - [Agents, on your machine and in CI](docs/agents.md)
 - [Setting up a repository](docs/setup.md)
 - [Day to day](docs/day-to-day.md)
