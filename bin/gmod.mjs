@@ -236,7 +236,10 @@ async function main() {
   if (cmd === 'commit') {
     const r = core.commitJob(root, { message: flags.message ?? args.filter(x => x !== '-m').join(' '), trailers: flags.trailer ?? [] });
     const lines = [`committed ${r.commit.slice(0, 10)} on ${r.branch}: ${r.subject}`];
+    if (r.existing) lines[0] = `already committed ${r.commit.slice(0, 10)} on ${r.branch}: ${r.subject}`;
     if (flags['no-push']) return out(flags, r, lines.join('\n'));
+    const up = core.catchUp(root, r.branch, core.planFromDisk(root)?.main ?? 'main');
+    if (up.merged) lines.push(`took in ${up.count} merge${up.count === 1 ? '' : 's'} of main CI made on origin's ${r.branch}`);
     core.git(['push', '-q', '-u', 'origin', r.branch], { cwd: root });
     lines.push(`pushed ${r.branch}`);
     if (flags['no-pr']) return out(flags, r, lines.join('\n'));

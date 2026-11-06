@@ -168,6 +168,63 @@ test('gmod commit finishes a job: only after red then green, pushed, as "<job>: 
   } finally { w.done(); }
 });
 
+test("gmod commit takes in CI's merges of main on the job's branch, and pushes work a refused push left behind", () => {
+  const w = world();
+  try {
+    gmod(w.alice, 'claim', 'add-sum');
+    write(w.alice, { 'src/sum.mjs': 'export const sum = () => 0;\n', 'test/sum.test.mjs': TEST });
+    gmod(w.alice, 'check');
+    write(w.alice, { 'src/sum.mjs': CODE });
+    gmod(w.alice, 'check');
+    assert.equal(gmod(w.alice, 'commit', '-m', 'sum adds', '--no-pr').code, 0);
+
+    // Main moves on, and CI brings origin's gmod/add-sum up to date with it.
+    write(w.seed, { 'README': 'moved\n' });
+    sh(w.seed, 'git', ['commit', '-q', '-am', 'main moves']);
+    sh(w.seed, 'git', ['push', '-q', 'origin', 'HEAD:main']);
+    sh(w.seed, 'git', ['fetch', '-q', 'origin', 'gmod/add-sum']);
+    sh(w.seed, 'git', ['switch', '-q', '-c', 'ci', 'origin/gmod/add-sum']);
+    sh(w.seed, 'git', ['merge', '-q', '--no-edit', 'main']);
+    sh(w.seed, 'git', ['push', '-q', 'origin', 'HEAD:gmod/add-sum']);
+
+    // Meanwhile the work goes on: a fix after review, red then green, committed.
+    write(w.alice, { 'src/sum.mjs': 'export const sum = () => 1;\n' });
+    gmod(w.alice, 'check');
+    write(w.alice, { 'src/sum.mjs': CODE + '// reviewed\n' });
+    gmod(w.alice, 'check');
+    let r = gmod(w.alice, 'commit', '-m', 'after review', '--no-pr');
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, /took in 1 merge of main CI made on origin's gmod\/add-sum\npushed gmod\/add-sum/);
+    assert.equal(sh(w.alice, 'git', ['show', 'origin/gmod/add-sum:README']), 'moved');
+    assert.match(sh(w.alice, 'git', ['show', 'origin/gmod/add-sum:src/sum.mjs']), /reviewed/);
+
+    // A commit whose push was refused earlier goes out on the next gmod commit.
+    write(w.alice, { 'src/sum.mjs': 'export const sum = () => 2;\n' });
+    gmod(w.alice, 'check');
+    write(w.alice, { 'src/sum.mjs': CODE + '// again\n' });
+    gmod(w.alice, 'check');
+    assert.equal(gmod(w.alice, 'commit', '-m', 'again', '--no-push').code, 0);
+    r = gmod(w.alice, 'commit', '-m', 'again', '--no-pr');
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, /already committed \w+ on gmod\/add-sum: add-sum: again\npushed/);
+    assert.match(sh(w.alice, 'git', ['show', 'origin/gmod/add-sum:src/sum.mjs']), /again/);
+    assert.match(gmod(w.alice, 'commit', '-m', 'again', '--no-pr').err, /nothing to commit/, 'once pushed, nothing is left');
+
+    // Someone's work on origin's branch is never merged in unseen.
+    sh(w.seed, 'git', ['fetch', '-q', 'origin', 'gmod/add-sum']);
+    sh(w.seed, 'git', ['switch', '-q', '-C', 'ci', 'origin/gmod/add-sum']);
+    write(w.seed, { 'src/other.mjs': 'x\n' });
+    sh(w.seed, 'git', ['add', '-A']);
+    sh(w.seed, 'git', ['commit', '-q', '-m', 'add-sum: someone else']);
+    sh(w.seed, 'git', ['push', '-q', 'origin', 'HEAD:gmod/add-sum']);
+    write(w.alice, { 'src/sum.mjs': 'export const sum = () => 3;\n' });
+    gmod(w.alice, 'check');
+    write(w.alice, { 'src/sum.mjs': CODE + '// third\n' });
+    gmod(w.alice, 'check');
+    assert.match(gmod(w.alice, 'commit', '-m', 'third', '--no-pr').err, /aren't merges of main/);
+  } finally { w.done(); }
+});
+
 test('a CI change needs no job: edited and committed on its own, nothing else with it', () => {
   const w = world();
   try {
