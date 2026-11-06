@@ -225,6 +225,27 @@ test('CI: a plan change travels alone', () => {
   } finally { w.done(); }
 });
 
+test('CI: a plan change may move the ADRs to a new adr_dir', () => {
+  const w = world();
+  try {
+    const adr = '---\nid: 0001\ntitle: Sums never round\nstatus: accepted\nscope: src/sum.mjs\ndate: 2026-11-06\n---\n## Rules\n- must: x\n';
+    land(w, { 'docs/adr/0001-sums.md': adr }, 'adr: 0001 Sums never round');
+    sh(w.alice, 'git', ['pull', '-q', '--rebase']);
+    sh(w.alice, 'git', ['mv', 'docs/adr/0001-sums.md', 'docs/decisions-0001-tmp.md']);
+    sh(w.alice, 'mkdir', ['-p', 'docs/decisions']);
+    sh(w.alice, 'git', ['mv', 'docs/decisions-0001-tmp.md', 'docs/decisions/0001-sums.md']);
+    write(w.alice, { '.gmod/plan.json': JSON.stringify({ ...PLAN, adr_dir: 'docs/decisions' }) });
+    sh(w.alice, 'git', ['commit', '-q', '-am', 'governance: move ADRs']);
+    const ok = gmod(w.alice, 'verify', '--base', 'origin/main');
+    assert.equal(ok.code, 0, ok.out);
+    assert.match(ok.out, /a plan change on its own/);
+    write(w.alice, { 'src/sum.mjs': CODE });
+    sh(w.alice, 'git', ['add', 'src/sum.mjs']);
+    sh(w.alice, 'git', ['commit', '-q', '-m', 'and some code']);
+    assert.match(gmod(w.alice, 'verify', '--base', 'origin/main').out, /only the plan.*src\/sum\.mjs/);
+  } finally { w.done(); }
+});
+
 test('done on main frees the next job and sweeps the claim', () => {
   const w = world();
   try {

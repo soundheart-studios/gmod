@@ -1,13 +1,13 @@
 {
   "name": "gmod",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Planned work with proof on plain git: a Claude Code mod, a CLI, and a CI gate with an AI reviewer.",
   "type": "module",
   "bin": {
     "gmod": "bin/gmod.mjs"
   },
   "scripts": {
-    "test": "node --test test/cli.test.mjs test/ci.test.mjs test/receive.test.mjs test/review.test.mjs test/setup.test.mjs test/gitlab.test.mjs"
+    "test": "node --test test/adr.test.mjs test/cli.test.mjs test/ci.test.mjs test/receive.test.mjs test/review.test.mjs test/setup.test.mjs test/gitlab.test.mjs"
   },
   "engines": {
     "node": ">=20"
