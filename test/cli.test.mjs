@@ -287,6 +287,32 @@ test('a subagent in its own worktree claims its own job and answers to it', () =
   } finally { w.done(); }
 });
 
+test('a claim left by a removed worktree, with nothing pushed, is taken over by your next worktree', () => {
+  const w = world();
+  try {
+    const gone = join(w.top, 'alice-gone');
+    sh(w.alice, 'git', ['worktree', 'add', '-q', '-b', 'side-a', gone]);
+    assert.equal(gmod(gone, 'claim', 'add-sum').code, 0);
+    // While that worktree lives, another one of yours is sent there.
+    const next = join(w.top, 'alice-next');
+    sh(w.alice, 'git', ['worktree', 'add', '-q', '-b', 'side-b', next]);
+    assert.match(gmod(next, 'claim', 'add-sum').err, /claimed by you in .*alice-gone/);
+    // The worktree is removed with the claim still on origin, its branch never pushed.
+    sh(w.alice, 'git', ['worktree', 'remove', '--force', gone]);
+    assert.match(sh(w.alice, 'git', ['ls-remote', 'origin', 'refs/gmod/claims/add-sum']), /claims\/add-sum/);
+    const r = gmod(next, 'claim', 'add-sum');
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, /took over your own claim/);
+    assert.equal(sh(next, 'git', ['branch', '--show-current']), 'gmod/add-sum');
+    // It's an ordinary claim now: release lets it go, on origin too.
+    assert.equal(gmod(next, 'release').code, 0);
+    assert.equal(sh(w.alice, 'git', ['ls-remote', 'origin', 'refs/gmod/claims/add-sum']), '');
+    // Someone else's claim is never taken over.
+    assert.equal(gmod(w.bob, 'claim', 'add-sum').code, 0);
+    assert.match(gmod(next, 'claim', 'add-sum').err, /claimed by bob@x\.io/);
+  } finally { w.done(); }
+});
+
 test('the commit gate runs in the shell it guards', () => {
   const w = world();
   try {
