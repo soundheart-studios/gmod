@@ -81,7 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions: { contents: write, pull-requests: write, issues: write, statuses: write }
     steps:
-      - uses: soundheart-studios/gmod@v1.4.2
+      - uses: soundheart-studios/gmod@v1.4.3
         with:
           reviewer-url: https://api.deepseek.com/v1
           reviewer-model: deepseek-flash
@@ -92,7 +92,7 @@ GitLab, `.gitlab-ci.yml` (the component is added to what's there):
 
 ```yaml
 include:
-  - component: gitlab.com/soundheart-studios/gmod/gmod@v1.4.2
+  - component: gitlab.com/soundheart-studios/gmod/gmod@v1.4.3
     inputs:
       reviewer-url: https://api.deepseek.com/v1
       reviewer-model: deepseek-flash
@@ -121,7 +121,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: you/gmod
-          ref: v1.4.2
+          ref: v1.4.3
           path: .gmod-tool
           token: ${{ secrets.GMOD_FORGE_TOKEN }}
       - uses: ./.gmod-tool

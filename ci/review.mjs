@@ -227,9 +227,10 @@ function reviewDiff() {
     const body = lines.slice(at);
     const added = body.filter(l => l.startsWith('+')).length;
     const removed = body.filter(l => l.startsWith('-')).length;
-    if (DATA.test(path) && body.length > DATA_LINES + 1) {
+    const kind = DATA.test(path) ? 'data' : generated(path, body) ? 'generated' : null;
+    if (kind && body.length > DATA_LINES + 1) {
       shortened.push(path);
-      return `${lines.slice(0, at + 1).join('\n')}\n${body.slice(1, DATA_LINES + 1).join('\n')}\n[gmod: data file, shortened: ${added} lines added and ${removed} removed in all; the first ${DATA_LINES} shown]\n`;
+      return `${lines.slice(0, at + 1).join('\n')}\n${body.slice(1, DATA_LINES + 1).join('\n')}\n[gmod: ${kind} file, shortened: ${added} lines added and ${removed} removed in all; the first ${DATA_LINES} shown]\n`;
     }
     if (part.length > FILE_LIMIT) {
       shortened.push(path);
@@ -239,8 +240,16 @@ function reviewDiff() {
   });
   return { diff: parts.join(''), shortened };
 }
+// Generated code (Go's "Code generated … DO NOT EDIT." header, controller-gen
+// CRDs, zz_generated files) is shown as a sample like data: the reviewer judges
+// its source, and in full it can spend a model's whole answer on reading.
+function generated(path, body) {
+  if (/(^|\/)zz_generated[^/]*$/.test(path)) return true;
+  const head = body.slice(0, 40).join('\n');
+  return /Code generated .* DO NOT EDIT\./.test(head) || /controller-gen\.kubebuilder\.io\/version:/.test(head);
+}
 function shortNote(s) {
-  return (s.length ? `\n\n<sub>Shortened for the reviewer: ${s.length > 6 ? `${s.slice(0, 6).join(', ')} and ${s.length - 6} more` : s.join(', ')} (data files show a sample).</sub>` : '');
+  return (s.length ? `\n\n<sub>Shortened for the reviewer: ${s.length > 6 ? `${s.slice(0, 6).join(', ')} and ${s.length - 6} more` : s.join(', ')} (data and generated files show a sample).</sub>` : '');
 }
 
 // A workflow that hands CI to gmod itself (its GitHub action, GitLab
