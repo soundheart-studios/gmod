@@ -267,6 +267,35 @@ test('CI: verify passes real work and refuses the rest', () => {
   } finally { w.done(); }
 });
 
+test("the plan's teardown runs in every throwaway checkout, even after a failing check", () => {
+  const w = world();
+  try {
+    const log = join(w.top, 'teardown.log');
+    const plan = { ...PLAN, teardown: `pwd >> '${log}'` };
+    write(w.alice, { '.gmod/plan.json': JSON.stringify(plan, null, 2) });
+    sh(w.alice, 'git', ['commit', '-q', '-am', 'plan: a teardown']);
+    sh(w.alice, 'git', ['push', '-q', 'origin', 'HEAD:main']);
+    gmod(w.alice, 'claim', 'add-sum');
+    write(w.alice, { 'src/sum.mjs': CODE, 'test/sum.test.mjs': TEST });
+    sh(w.alice, 'git', ['add', '-A']);
+    sh(w.alice, 'git', ['commit', '-q', '-m', 'add-sum: sum adds']);
+    // verify proves in a throwaway checkout: once with the change, once with
+    // the code put back (where the check fails). The teardown runs there.
+    assert.equal(gmod(w.alice, 'verify', '--base', 'origin/main', '--branch', 'gmod/add-sum').code, 0);
+    const ran = readFileSync(log, 'utf8').trim().split('\n');
+    assert.ok(ran.length >= 1, 'teardown ran');
+    assert.ok(ran.every(d => /gmod-prove-/.test(d)), ran.join('\n'));
+  } finally { w.done(); }
+});
+
+test('a teardown that is not a command is refused', () => {
+  const w = world();
+  try {
+    write(w.alice, { '.gmod/plan.json': JSON.stringify({ ...PLAN, teardown: ['make', 'down'] }) });
+    assert.match(gmod(w.alice, 'next').err, /"teardown" must be a shell command/);
+  } finally { w.done(); }
+});
+
 test('CI: a plan change travels alone', () => {
   const w = world();
   try {

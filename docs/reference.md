@@ -251,6 +251,8 @@ Each job keeps `.gmod/journal/<job>.md`. The agent writes notes there (intent, d
 
 `files` is what the job may change, and `tests` is where its tests go. They're kept apart so CI can put the code back while keeping the tests. A check is a shell command that exits 0 when its criterion holds.
 
+`teardown` (optional) is a shell command that undoes what the checks leave outside the checkout, such as a kind cluster or a container: `"teardown": "make kind-down"`. gmod runs it in each throwaway checkout it makes (the CI proof, the checks of work on a moved main) before removing it, and after any check killed at its 10-minute timeout. Its exit status is ignored.
+
 ---
 
 

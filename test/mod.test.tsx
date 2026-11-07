@@ -125,6 +125,20 @@ test('a subagent is told the routine when the repository is governed', async ($,
   expect(prompt).toContain('pass its path as "dir"')
 })
 
+test('a prompt that already carries the routine passes unchanged, so auto mode reviews what runs', async ($, on) => {
+  const seen = engine(on, () => ({ exitCode: 0, stdout: STATUS }))
+  on('command.register', () => ({ value: { command: 'gmod' } }))
+  on('tool.register', (_, e) => ({ value: { tool: `mcp__gmod__${e.name}` } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Agent', description: 'work docs', prompt: 'Do the docs job.', subagent_type: 'general-purpose' })
+  const once = String(seen.calls.at(-1)?.prompt)
+  await $.tool.call({ tool: 'Agent', description: 'work docs', prompt: once, subagent_type: 'general-purpose' })
+  expect(String(seen.calls.at(-1)?.prompt)).toBe(once)
+  expect(once.split('is governed by gmod').length).toBe(2)
+})
+
 test('the agent cannot move claims or rewrite the plan through the shell', async ($, on) => {
   engine(on, () => ({ exitCode: 0, stdout: STATUS }))
   expect((await $.tool.call({ tool: 'Bash', command: 'git push origin :refs/gmod/claims/add-sum' })).deny).toContain('claims change only')
@@ -145,11 +159,14 @@ const PANE = {
   props: { title: 'gmod', isFocused: true, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
 } as const
 
-async function started($: Engine, on: On, answer: (args: readonly string[]) => Answer) {
+type Panes = { opened: Record<string, unknown>[]; closed: Record<string, unknown>[] }
+
+async function started($: Engine, on: On, answer: (args: readonly string[]) => Answer, panes: Panes = { opened: [], closed: [] }) {
   const seen = engine(on, answer)
   on('command.register', () => ({ value: { command: 'gmod' } }))
   on('tool.register', (_, e) => ({ value: { tool: `mcp__gmod__${e.name}` } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.open', (_, e) => (panes.opened.push(e as unknown as Record<string, unknown>), { value: { isPlaced: true } }))
+  on('ui.close', (_, e) => (panes.closed.push(e as unknown as Record<string, unknown>), { value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
   on('session.surfaces', () => ({ value: ['terminal'] }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -426,15 +443,42 @@ test('the agent drafts decisions and never accepts them', async ($, on) => {
   expect((await $.command.run({ command: 'gmod', args: 'adr accept cents-only' } as never)).text).toContain('Only a person')
 })
 
-test('a decision draft waits under Needs you, with Accept and Reject', async ($, on) => {
-  const seen = await started($, on, args => (args[0] === 'adr' ? { exitCode: 0, stdout: 'accepted ADR 0002: Money is integer cents' } : { exitCode: 0, stdout: ADR_STATUS }))
+const ADR_PANE = { ...PANE, requestId: 'gmod-adr', props: { ...PANE.props, title: 'gmod · decision' } }
+
+test('a decision draft is one line under Needs you; its card is in a pane of its own', async ($, on) => {
+  const panes: Panes = { opened: [], closed: [] }
+  const opened = panes.opened
+  await started($, on, () => ({ exitCode: 0, stdout: ADR_STATUS }), panes)
   const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: /^⚖ Decision waiting: Money is integer cents$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Decision: Money is integer cents$/ })).toBeUndefined()
+  await ui.press({ key: 'adrreviewcents-only' })
+  expect(opened.some(o => o.id === 'gmod-adr' && o.focus === true)).toBe(true)
+  await ui.unmount()
+})
+
+test('the decision pane accepts, closes itself and hands back to the plan pane', async ($, on) => {
+  const panes: Panes = { opened: [], closed: [] }
+  const { opened, closed } = panes
+  const seen = await started($, on, args => (args[0] === 'adr' ? { exitCode: 0, stdout: 'accepted ADR 0002: Money is integer cents' } : { exitCode: 0, stdout: ADR_STATUS }), panes)
+  const ui = await $.ui.mount(ADR_PANE)
   expect(await ui.find({ type: 'Text', text: /^Decision: Money is integer cents$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^■ must no floats for money$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^governs src\/\*\*$/ })).toBeDefined()
   await ui.press({ key: 'adracceptcents-only' })
   expect(seen.runs.some(r => r.args[0] === 'adr' && r.args[1] === 'accept' && r.args[2] === 'cents-only')).toBe(true)
+  expect(closed.some(c => c.id === 'gmod-adr')).toBe(true)
+  expect(opened.at(-1)).toMatchObject({ id: 'gmod', focus: true })
   await ui.unmount()
+})
+
+test('a drafted decision opens its pane for the person', async ($, on) => {
+  const opened: Record<string, unknown>[] = []
+  on('ui.open', (_, e) => (opened.push(e as unknown as Record<string, unknown>), { value: { isPlaced: true } }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
+  engine(on, args => (args[0] === 'adr' ? { exitCode: 0, stdout: 'drafted ADR cents-only: Money is integer cents.' } : { exitCode: 0, stdout: ADR_STATUS }))
+  await $.tool.call({ tool: 'mcp__gmod__adr_propose', title: 'Money is integer cents', decision: 'x', rules: [{ level: 'must', text: 'no floats' }] } as never)
+  expect(opened.some(o => o.id === 'gmod-adr')).toBe(true)
 })
 
 test('an opened job shows the decisions that bind it', async ($, on) => {

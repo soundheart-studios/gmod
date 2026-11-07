@@ -1,6 +1,6 @@
 export type GmodRule = { level: 'must' | 'should'; text: string }
 export type GmodAdr = { id: string; title: string; rules: GmodRule[] }
-export type GmodAdrDraft = { draft: string; title: string; decision: string; scope: string[]; rules: GmodRule[]; supersedes: string | null; by: string }
+export type GmodAdrDraft = { draft: string; title: string; context?: string; decision: string; scope: string[]; rules: GmodRule[]; supersedes: string | null; by: string }
 export type GmodRun = { result: 'green' | 'red'; at: string; failed: string[] }
 export type GmodJob = {
   id: string

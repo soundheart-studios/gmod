@@ -8,6 +8,9 @@ import { decidesPlan, mergesPr, movesClaims, writesPlan, writesRecords } from '.
 // same one people run at a terminal and CI runs on pull requests.
 
 const PANE = 'gmod'
+// A decision draft is read in a pane of its own, then hands back to PANE.
+const ADR_PANE = 'gmod-adr'
+const ADR_TITLE = 'gmod · decision'
 const status = atom({ plugin: 'gmod', key: 'status' } as const, null, { shape: 'status-3' })
 const allowPlan = atom({ plugin: 'gmod', key: 'allowPlan' } as const, false)
 const open = atom({ plugin: 'gmod', key: 'open' } as const, null)
@@ -85,6 +88,12 @@ async function withNotice<R extends ToolCallResult>($: EngineInterface, ran: R, 
   if (!(s?.jobs ?? []).some(j => j.moved && MOVED_LEVELS.includes(j.moved.level))) return ran
   const said = (await gmod($, ['notice', path])).stdout.trim()
   return said ? { ...ran, context: [...(ran.context ?? []), said] } : ran
+}
+
+// The decision pane closes and the plan pane takes the keys back.
+async function backToPlan($: EngineInterface): Promise<void> {
+  await $.ui.close({ id: ADR_PANE })
+  await $.ui.open({ id: PANE, title: 'gmod', focus: true })
 }
 
 async function guard($: EngineInterface, path: string): Promise<string | null> {
@@ -273,6 +282,13 @@ export const register: Register = on => {
     const draft = Object.fromEntries(['title', 'scope', 'context', 'decision', 'rules', 'supersedes'].map(k => [k, (e as unknown as Record<string, unknown>)[k]]).filter(([, v]) => v !== undefined))
     const r = await gmod($, ['adr', 'propose', JSON.stringify(draft)])
     await refresh($)
+    // The person reads it in its own pane; a session with no surface just
+    // has it under Needs you.
+    if (r.exitCode === 0) {
+      try {
+        if ((await $.session.surfaces()).length) void $.ui.open({ id: ADR_PANE, title: ADR_TITLE, closeOnEscape: true })
+      } catch {}
+    }
     return r.exitCode === 0 ? { result: `${text(r)} The person sees it in the gmod pane; don't accept it yourself.` } : { deny: text(r) }
   })
   on('tool.call', { tool: 'mcp__gmod__describe_proposal' }, async ($, e) => {
@@ -315,10 +331,12 @@ export const register: Register = on => {
     return withNotice($, ran, await $.session.cwd())
   }).catch(($, e, next) => (next.called ? next(e) : { deny: 'gmod: its command guard failed; nothing ran' }))
 
-  // A subagent is told the routine in its own prompt.
+  // A subagent is told the routine in its own prompt, once: a prompt that
+  // already carries it passes as it is, so what auto mode reviewed is what runs.
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     const s = await read($, status)
-    return s?.governed ? next({ ...e, prompt: e.prompt + FOR_SUBAGENTS }) : next(e)
+    if (!s?.governed || e.prompt.includes(FOR_SUBAGENTS.trim())) return next(e)
+    return next({ ...e, prompt: e.prompt + FOR_SUBAGENTS })
   }).catch(($, e, next) => next(e))
 
   // ---- the person's command ----
@@ -745,35 +763,16 @@ export const register: Register = on => {
     const adrDrafts = s.adrDrafts ?? []
     const needs = Boolean(p) || stalled.length > 0 || broken.length > 0 || adrDrafts.length > 0
 
-    async function decideAdr(choice: 'accept' | 'reject', draft: string) {
-      const r = await gmod($, ['adr', choice, draft])
-      await refresh($)
-      $.ui.toast(cut(text(r), 120))
-    }
-
-    // A decision draft: the title, what was decided, its rules, and the yes.
-    function adrCard(d: (typeof adrDrafts)[number]) {
+    // A decision draft is one line here; its card opens in the decision pane.
+    function adrLine(d: (typeof adrDrafts)[number]) {
       return (
-        <Box key={`adrcard${d.draft}`} flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1} marginTop={1}>
-          <Text bold>Decision: {d.title}</Text>
-          <Text wrap="wrap">{d.decision}</Text>
-          {d.rules.map(r => (
-            <Text key={r.text} color={r.level === 'must' ? 'magenta' : undefined} dimColor={r.level === 'should'} wrap="wrap">
-              {r.level === 'must' ? '■ must' : '□ should'} {r.text}
-            </Text>
-          ))}
-          <Text dimColor wrap="wrap">
-            governs {d.scope.length ? d.scope.join(', ') : 'the whole repository'}
-            {d.supersedes ? ` · replaces ADR ${d.supersedes}` : ''}
-          </Text>
-          <Box flexDirection="row" gap={2} marginTop={1}>
-            <Button key={`adraccept${d.draft}`} variant="primary" onPress={() => decideAdr('accept', d.draft)}>
-              Accept
-            </Button>
-            <Button key={`adrreject${d.draft}`} onPress={() => decideAdr('reject', d.draft)}>
-              Reject
-            </Button>
+        <Box key={`adrline${d.draft}`} flexDirection="row" gap={2}>
+          <Box flexShrink={1}>
+            <Text color="magenta" wrap="wrap">⚖ Decision waiting: {d.title}</Text>
           </Box>
+          <Button key={`adrreview${d.draft}`} plain onPress={() => $.ui.open({ id: ADR_PANE, title: ADR_TITLE, focus: true, closeOnEscape: true })}>
+            <Text color="cyan">Review ▸</Text>
+          </Button>
         </Box>
       )
     }
@@ -791,7 +790,7 @@ export const register: Register = on => {
           <Box flexDirection="column" marginTop={1}>
             <Text bold color="cyan">Needs you</Text>
             {p && card(p)}
-            {adrDrafts.map(d => adrCard(d))}
+            {adrDrafts.map(d => adrLine(d))}
             {stalled.map(j => (
               <Text key={`stall${j.id}`} color="red" wrap="wrap">! {j.id} is red{j.where && j.where !== 'here' ? ` in ${j.where}` : ''}: its criteria still fail</Text>
             ))}
@@ -827,6 +826,57 @@ export const register: Register = on => {
         </Box>
 
         {(await read($, allowPlan)) && <Text color="yellow">Direct plan edits allowed: /gmod lock-plan</Text>}
+      </Box>
+    )
+  })
+
+  // ---- the decision pane ----
+  //
+  // A decision draft's whole card, apart from the plan so the plan stays
+  // short. Accept, Reject or Back close it and hand back to the plan pane.
+  on('ui.render', { component: 'Pane', requestId: ADR_PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const s = await read($, status)
+    const drafts = s?.adrDrafts ?? []
+
+    async function decide(choice: 'accept' | 'reject', draft: string) {
+      const r = await gmod($, ['adr', choice, draft])
+      await refresh($)
+      const said = text(r)
+      $.ui.toast(said.length > 120 ? `${said.slice(0, 119)}…` : said)
+      await backToPlan($)
+    }
+
+    return (
+      <Box flexDirection="column">
+        {drafts.length === 0 && <Text dimColor>No decision is waiting.</Text>}
+        {drafts.map(d => (
+          <Box key={`adrcard${d.draft}`} flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1} marginBottom={1}>
+            <Text bold>Decision: {d.title}</Text>
+            {d.context ? <Text dimColor wrap="wrap">{d.context}</Text> : null}
+            <Text wrap="wrap">{d.decision}</Text>
+            {d.rules.map(r => (
+              <Text key={r.text} color={r.level === 'must' ? 'magenta' : undefined} dimColor={r.level === 'should'} wrap="wrap">
+                {r.level === 'must' ? '■ must' : '□ should'} {r.text}
+              </Text>
+            ))}
+            <Text dimColor wrap="wrap">
+              governs {d.scope.length ? d.scope.join(', ') : 'the whole repository'}
+              {d.supersedes ? ` · replaces ADR ${d.supersedes}` : ''}
+            </Text>
+            <Box flexDirection="row" gap={2} marginTop={1}>
+              <Button key={`adraccept${d.draft}`} variant="primary" onPress={() => decide('accept', d.draft)}>
+                Accept
+              </Button>
+              <Button key={`adrreject${d.draft}`} onPress={() => decide('reject', d.draft)}>
+                Reject
+              </Button>
+            </Box>
+          </Box>
+        ))}
+        <Button key="adrback" plain onPress={() => backToPlan($)}>
+          <Text dimColor>◂ Back to the plan</Text>
+        </Button>
       </Box>
     )
   })
