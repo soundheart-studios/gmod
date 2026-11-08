@@ -14,7 +14,8 @@
     "skip-gated": "node --test test/skip-gated.test.mjs",
     "doctor-catch-up": "node --test test/doctor-catch-up.test.mjs",
     "suite-list": "node --test test/suite.test.mjs",
-    "release": "node --test test/release.test.mjs"
+    "release": "node --test test/release.test.mjs",
+    "mod": "claude plugin test ."
   },
   "jobs": [
     {
@@ -350,7 +351,32 @@
         }
       ],
       "after": [
-        "npm-test-all"
+        "npm-test-all",
+        "bash-hook-no-rewrite"
+      ]
+    },
+    {
+      "id": "bash-hook-no-rewrite",
+      "phase": "fixes",
+      "goal": "The Bash hook gates commits without rewriting commands",
+      "files": [
+        "hooks/register.tsx",
+        "hooks/shell.ts"
+      ],
+      "tests": [
+        "test/shell.test.ts",
+        "test/mod.test.tsx"
+      ],
+      "brief": "hooks/register.tsx:328 puts a git() shell function in front of every Bash command whose text contains the word \"commit\" (gated(), line 107). Auto mode reviewed the original command, sees a different one, and gives no verdict, so calls have to be sent again; harmless commands like `grep commit` are rewritten too. Instead: a parser in hooks/shell.ts (beside movesClaims etc.) finds whether the command runs `git commit` and in which directory (`git -C dir commit`, `cd dir && git commit`, global options skipped as gated() does today). If it does, the hook runs `gmod gate-commit --dir <dir>` itself before next(): a refusal becomes deny with the gate's text, a pass runs the command exactly as written. Every other command runs unchanged. Remove gated(). Not in scope: commits hidden inside scripts or make targets (the shell function caught those; a git pre-commit hook could later), and the Edit/Write guards, which never rewrite.",
+      "done_when": [
+        {
+          "text": "a command that only mentions commit, or runs no git commit, reaches the shell exactly as written",
+          "check": "mod"
+        },
+        {
+          "text": "git commit and git -C <dir> commit run the commit gate in the hook for that dir: a refusal denies the call, a pass runs the command unchanged",
+          "check": "mod"
+        }
       ]
     }
   ],
