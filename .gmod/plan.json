@@ -15,7 +15,7 @@
     "doctor-catch-up": "node --test test/doctor-catch-up.test.mjs",
     "suite-list": "node --test test/suite.test.mjs",
     "release": "node --test test/release.test.mjs",
-    "mod": "claude plugin test ."
+    "mod": "npx -y @anthropic-ai/claude-code plugin test ."
   },
   "jobs": [
     {
