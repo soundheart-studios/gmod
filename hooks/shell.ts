@@ -43,8 +43,38 @@ export function movesClaims(cmd: string): boolean {
   return /refs\/gmod\//.test(cmd) && /\b(update-ref|push|branch\s+-D|tag|replace)\b/.test(cmd)
 }
 
+// A person's decisions: approving or rejecting the plan or an ADR, and
+// switching managed mode on or off (ADR 0001).
 export function decidesPlan(cmd: string): boolean {
-  return /\bgmod(?:\.mjs)?['"]?\s+(?:adr\s+)?(?:approve|reject|accept)\b/.test(cmd)
+  return /\bgmod(?:\.mjs)?['"]?\s+(?:adr\s+)?(?:approve|reject|accept)\b/.test(cmd) || switchesManaged(cmd)
+}
+
+const GMOD = /^(?:gmod|gmod\.mjs)$/
+const LAUNCHERS = ['node', 'npx', 'bun', 'bunx', 'deno', 'tsx', 'pnpx']
+
+// `gmod manage on|off`, read word by word so a quoted mention (grep, echo, a
+// commit message) is text, not a command; `gmod manage` and `gmod manage
+// status` only read. Text run through sh -c, eval and the like is read too.
+function switchesManaged(cmd: string, depth = 0): boolean {
+  return lists(cmd).some(words => switchWords(words, depth))
+}
+
+function switchWords(words: string[], depth: number): boolean {
+  const { name, args } = simple(words)
+  if (RUNNERS.includes(name)) {
+    if (depth > 3) return false
+    const rest = args.filter(a => !a.startsWith('-'))
+    return rest.some(a => switchesManaged(a, depth + 1)) || switchWords(rest, depth + 1)
+  }
+  let rest: string[]
+  if (GMOD.test(name)) rest = args
+  else if (LAUNCHERS.includes(name)) {
+    const at = args.findIndex(a => GMOD.test(a.replace(/^.*\//, '')))
+    if (at < 0 || args.slice(0, at).some(a => !a.startsWith('-'))) return false
+    rest = args.slice(at + 1)
+  } else return false
+  const [sub, how] = rest.filter(a => !a.startsWith('-'))
+  return sub === 'manage' && (how === 'on' || how === 'off')
 }
 
 // The words of a command, list by list: quotes and escapes respected, so a
