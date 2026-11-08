@@ -10,6 +10,7 @@ import * as runnerLib from '../lib/runner.mjs';
 import * as stateLib from '../lib/state.mjs';
 import * as signalsLib from '../lib/signals.mjs';
 import * as capsLib from '../lib/capabilities.mjs';
+import * as managedLib from '../lib/managed.mjs';
 import { readFileSync as readSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -44,6 +45,8 @@ const HELP = `gmod: planned work with proof, on plain git
                                   say what the draft is for, and what it assumes
   gmod approve                    a person's yes: commit the draft as the plan
   gmod reject [reason]            a person's no: drop the draft
+  gmod manage [on | off | status] managed mode (.gmod/managed.json, off by default): a person's
+                                  decision, committed alone; with no argument, whether it is on
   gmod prove <job> --base <ref> [--head <ref>]
                                   the tests fail without the change
   gmod verify --base <ref> [--head <ref>] [--branch <name>] [--title <text>] [--report <file>]
@@ -286,6 +289,18 @@ async function main() {
     return out(flags, r, `${r.existed ? 'already open' : 'opened'}: ${r.url}\n${r.title}${r.auto ? '\nmerges by itself once its checks pass' : ''}`);
   }
   if (cmd === 'adr') return runAdr(root, args[0], args.slice(1), flags);
+  if (cmd === 'manage') {
+    const how = args[0] ?? 'status';
+    if (how === 'status') {
+      const managed = managedLib.isManaged(root);
+      return out(flags, { managed }, `managed mode is ${managed ? 'on' : 'off'} (${managedLib.MANAGED}${managed ? '' : ': missing or managed: false'})`);
+    }
+    if (how !== 'on' && how !== 'off') throw new core.GmodError('gmod manage [on | off | status]');
+    const r = managedLib.setManaged(root, how === 'on');
+    if (r.unchanged) return out(flags, r, `managed mode is already ${how}`);
+    const lines = await publish(root, flags, `gmod/managed-${how}-${r.commit}`, r.sha);
+    return out(flags, { ...r, published: lines }, [`managed mode ${how} (commit ${r.commit} on ${r.branch || 'a detached HEAD'})`, ...lines].join('\n'));
+  }
   switch (cmd) {
     case 'init': {
       const r = core.init(root);
