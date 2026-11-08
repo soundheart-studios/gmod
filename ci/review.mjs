@@ -130,7 +130,7 @@ const changed = core.git(['diff', '--name-only', `${mb}...${head}`], { cwd: root
 if (!changed.trim()) unanswered(`### gmod review: nothing to review (no difference between ${flags.base.slice(0, 12)} and ${head}); run it against the pull request's own base`);
 const changedList = changed.split('\n').filter(Boolean);
 const adrPrefix = `${adr.adrDir(plan)}/`;
-const governance = changedList.some(f => f === core.PLAN || f.startsWith(adrPrefix) || core.isCiFile(f));
+const governance = changedList.some(f => f === core.PLAN || f === core.MANAGED_SWITCH || f.startsWith(adrPrefix) || core.isCiFile(f));
 if (governance) await reviewGovernance();
 const id = core.jobNamed(root, { mb, head, branch: flags.branch, title: flags.title });
 const job = plan.jobs.find(j => j.id === id);

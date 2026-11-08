@@ -102,6 +102,24 @@ test('a governance change is asked whether it weakens what is checked', async ()
   } finally { m.close(); r0.done(); }
 });
 
+test('a managed-mode switch alone is a governance change', async () => {
+  const r0 = repo();
+  const m = await model(b => (b.messages[0].content.includes('governance')
+    ? { summary: 'Turns managed mode on.', weakens: { verdict: 'pass', evidence: '+{ "v": 1, "managed": true }' }, overall: 'pass' }
+    : { status: 500 }));
+  try {
+    r0.g('switch', '-q', '-c', 'gmod/managed');
+    writeFileSync(join(r0.dir, '.gmod', 'managed.json'), '{ "v": 1, "managed": true }\n');
+    r0.g('add', '-A'); r0.g('commit', '-q', '-m', 'managed: on');
+    const r = await review(r0.dir, { GMOD_REVIEW_URL: m.url }, '--branch', 'gmod/managed');
+    assert.equal(r.code, 0, r.out);
+    assert.doesNotMatch(r.out, /no job named/);
+    assert.match(r.out, /### gmod review: pass \(a governance change\)/);
+    assert.equal(m.asked.length, 1, 'asked the governance question once');
+    assert.match(m.asked[0].messages[1].content, /managed\.json/);
+  } finally { m.close(); r0.done(); }
+});
+
 test('a reviewer API without JSON schemas is asked in plain JSON mode', async () => {
   const r0 = repo();
   const pass = { verdict: 'pass', evidence: 'src/sum.mjs:1' };
