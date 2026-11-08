@@ -127,6 +127,18 @@ test('the agent drafts, never decides', async ($, on) => {
   expect((await $.command.run({ command: 'gmod', args: 'reject' } as never)).text).toContain('Only a person')
 })
 
+test("switching managed mode is the person's decision, at their own prompt", async ($, on) => {
+  engine(on, () => ({ exitCode: 0, stdout: STATUS }))
+  for (const command of ['gmod manage on', 'node ~/gmod/bin/gmod.mjs manage off']) {
+    const deny = String((await $.tool.call({ tool: 'Bash', command })).deny)
+    expect(deny).toContain("switching managed mode is the person's decision")
+    expect(deny).toContain('gmod manage on|off at their own prompt')
+    expect(deny).not.toContain('approving or rejecting')
+  }
+  const approve = String((await $.tool.call({ tool: 'Bash', command: 'gmod reject' })).deny)
+  expect(approve).toBe("gmod: approving or rejecting the plan is the person's decision: they do it in the gmod pane or with /gmod approve")
+})
+
 test("gmod's own records can't be written from the shell", async ($, on) => {
   engine(on, () => ({ exitCode: 0, stdout: STATUS }))
   expect((await $.tool.call({ tool: 'Bash', command: 'echo [] > .git/gmod/evidence/add-sum.json' })).deny).toContain('own records')
