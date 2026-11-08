@@ -23,7 +23,8 @@
     "review": "node --test test/review.test.mjs",
     "ci-pin": "grep -q 'uses: soundheart-studios/gmod@v1.6.0' .github/workflows/gmod.yml",
     "fast-read": "node --test test/fast-read.test.mjs",
-    "ci-pin-1-6-1": "grep -q 'uses: soundheart-studios/gmod@v1.6.1' .github/workflows/gmod.yml"
+    "ci-pin-1-6-1": "grep -q 'uses: soundheart-studios/gmod@v1.6.1' .github/workflows/gmod.yml",
+    "ci-tests": "node --test test/ci.test.mjs"
   },
   "jobs": [
     {
@@ -692,6 +693,25 @@
         {
           "text": "the gmod workflow uses soundheart-studios/gmod@v1.6.1",
           "check": "ci-pin-1-6-1"
+        }
+      ]
+    },
+    {
+      "id": "manage-pr",
+      "phase": "upkeep",
+      "goal": "gmod manage on/off opens its own pull request",
+      "files": [
+        "lib/ci.mjs",
+        "test/ci.test.mjs"
+      ],
+      "tests": [
+        "test/ci.test.mjs"
+      ],
+      "brief": "`gmod manage on` commits .gmod/managed.json and pushes gmod/managed-on-<sha>, then publishDecision → openPr refuses: prKind (lib/ci.mjs ~512) only knows plan, adr and ci, so a branch that changes only the managed switch is sorted as a job and openPr looks for a commit titled \"managed-on-<sha>:\". Seen for real on skiff (PR #32 had to be opened by hand). Fix: prKind returns \"managed\" when the branch changes core.MANAGED_SWITCH, so openPr names no job and titles the PR by its commit (\"managed: on\"), like plan, ADR and CI changes. The gate already checks the switch travels alone (core.mjs ~874); leave it. Test in test/ci.test.mjs, modelled on the GitHub openPr test with a fake GMOD_GH: publishDecision on a branch whose only commit is \"managed: on\" adding .gmod/managed.json opens a PR titled \"managed: on\" with kind \"managed\", and never calls pr merge.",
+      "done_when": [
+        {
+          "text": "publishing a managed-mode switch opens a pull request titled by its commit",
+          "check": "ci-tests"
         }
       ]
     }
