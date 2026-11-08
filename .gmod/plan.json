@@ -20,7 +20,8 @@
     "approve-main": "node --test --test-name-pattern=\"approve on main\" test/approve-anywhere.test.mjs",
     "adr-branch": "node --test --test-name-pattern=\"adr accept on a job's branch\" test/approve-anywhere.test.mjs",
     "managed-gate": "node --test test/managed-gate.test.mjs",
-    "review": "node --test test/review.test.mjs"
+    "review": "node --test test/review.test.mjs",
+    "ci-pin": "grep -q 'uses: soundheart-studios/gmod@v1.6.0' .github/workflows/gmod.yml"
   },
   "jobs": [
     {
@@ -579,6 +580,48 @@
           "check": "release"
         }
       ]
+    },
+    {
+      "id": "ci-gmod-1-6-0",
+      "phase": "upkeep",
+      "goal": "CI runs gmod 1.6.0 instead of 1.4.7",
+      "files": [
+        ".github/workflows/gmod.yml"
+      ],
+      "tests": [],
+      "brief": "Change `uses: soundheart-studios/gmod@v1.4.7` to `@v1.6.0` in .github/workflows/gmod.yml (line 16), nothing else. This brings 1.5.0's CI fixes (catch-up dispatch once per commit, no double gate) and 1.6.0's managed-switch gate and review into CI. It lands as a CI change made by a job (CI files only).",
+      "done_when": [
+        {
+          "text": "the gmod workflow uses soundheart-studios/gmod@v1.6.0",
+          "check": "ci-pin"
+        }
+      ]
+    },
+    {
+      "id": "decision-words",
+      "phase": "upkeep",
+      "goal": "The hook refuses decisions, not commands that mention them",
+      "files": [
+        "hooks/shell.ts",
+        "hooks/register.tsx",
+        "test/shell.test.ts",
+        "test/mod.test.tsx"
+      ],
+      "tests": [
+        "test/shell.test.ts",
+        "test/mod.test.tsx"
+      ],
+      "brief": "decidesPlan in hooks/shell.ts still matches approve/reject/accept with a regex anywhere in the command, so a read-only `grep 'gmod approve' test/mod.test.tsx` was refused (seen in managed-review). Read approve/reject/adr accept word by word with the same quote-aware reader switchesManaged already uses, so only a real gmod approve/reject/adr accept command is refused. Export switchesManaged (or a decision-kind helper) and use it in hooks/register.tsx instead of the APPROVES regex copied there in managed-review. Refusal wording stays as is.",
+      "done_when": [
+        {
+          "text": "a command that only mentions gmod approve, reject or adr accept (grep, echo, a commit message) runs",
+          "check": "mod"
+        },
+        {
+          "text": "gmod approve, gmod reject and gmod adr accept run from an agent's shell are still refused, with the same words",
+          "check": "mod"
+        }
+      ]
     }
   ],
   "phases": [
@@ -609,6 +652,14 @@
       "outcome": "Only a person can switch managed mode, and the switch's own pull request lands through the gate.",
       "after": [
         "managed"
+      ]
+    },
+    {
+      "id": "upkeep",
+      "title": "Upkeep",
+      "outcome": "CI runs gmod 1.6.0, and gmod's hook refuses only real decisions, not commands that mention them.",
+      "after": [
+        "managed-guard"
       ]
     }
   ]
