@@ -356,7 +356,8 @@
       "after": [
         "npm-test-all",
         "bash-hook-no-rewrite",
-        "approve-anywhere"
+        "approve-anywhere",
+        "agent-hook-no-rewrite"
       ]
     },
     {
@@ -398,9 +399,10 @@
         "bin/gmod.mjs"
       ],
       "tests": [
-        "test/approve-anywhere.test.mjs"
+        "test/approve-anywhere.test.mjs",
+        "test/cli.test.mjs"
       ],
-      "brief": "approve (lib/core.mjs:1186) writes .gmod/plan.json and commits it on the checked-out branch, so it refuses a gmod/ job branch (line 1191); adr accept does the same (lib/adr.mjs:145). A person approving from a session that is working a job (its folder on gmod/<job>, or a job worktree) is refused every time. Instead, build the decision commit off the checkout: on main's tip (local main, or origin/main when that is ahead), with a temporary index (read-tree, hash-object, update-index, write-tree, commit-tree), and hand that commit to publishDecision (lib/ci.mjs:591), which today pushes HEAD, so it pushes the given commit as gmod/plan-<sha> / the decision branch. The proposal's base is checked against the plan in that main commit, not the job branch's copy. The checkout, its index and its branch are never touched; when the checkout is on main itself, it still moves to the new commit as today. Not in scope: the pane's wording, and plan branches other than main.",
+      "brief": "approve (lib/core.mjs:1186) writes .gmod/plan.json and commits it on the checked-out branch, so it refuses a gmod/ job branch (line 1191); adr accept does the same (lib/adr.mjs:145). A person approving from a session that is working a job (its folder on gmod/<job>, or a job worktree) is refused every time. Instead, build the decision commit off the checkout: on main's tip (local main, or origin/main when that is ahead), with a temporary index (read-tree, hash-object, update-index, write-tree, commit-tree), and hand that commit to publishDecision (lib/ci.mjs:591), which today pushes HEAD, so it pushes the given commit as gmod/plan-<sha> / the decision branch. The proposal's base is checked against the plan in that main commit, not the job branch's copy. The checkout, its index and its branch are never touched; when the checkout is on main itself, it still moves to the new commit as today. test/cli.test.mjs ('the agent drafts the plan, a person approves it, and it lands alone', line ~429) asserts that approve on a job's branch is refused; rewrite that part so approve on a job's branch succeeds and leaves the checkout alone, keeping its approve-from-main path. Not in scope: the pane's wording, and plan branches other than main.",
       "done_when": [
         {
           "text": "approve on a job's branch commits the plan on main's tip, publishes it, and leaves the checkout, index and branch as they were",
@@ -413,6 +415,31 @@
         {
           "text": "adr accept on a job's branch works the same way",
           "check": "adr-branch"
+        }
+      ]
+    },
+    {
+      "id": "agent-hook-no-rewrite",
+      "phase": "fixes",
+      "goal": "Subagent prompts are never changed by gmod's hook",
+      "after": [
+        "bash-hook-no-rewrite"
+      ],
+      "files": [
+        "hooks/register.tsx"
+      ],
+      "tests": [
+        "test/mod.test.tsx"
+      ],
+      "brief": "hooks/register.tsx ~line 336: in a governed repository, an Agent call whose prompt lacks FOR_SUBAGENTS gets it appended (next({ ...e, prompt: e.prompt + FOR_SUBAGENTS })). Auto mode reviewed the original prompt, sees a changed one and gives no verdict, so the call has to be sent again. Instead, deny such a call with a message that says the subagent needs gmod's routine and quotes FOR_SUBAGENTS to add to the prompt verbatim; a prompt that already carries it passes unchanged, as today. Ungoverned repositories: unchanged. With this and bash-hook-no-rewrite, no gmod hook changes a tool call's input. Not in scope: the routine's wording.",
+      "done_when": [
+        {
+          "text": "in a governed repository, an Agent prompt without the routine is refused with the routine to add, and nothing runs",
+          "check": "mod"
+        },
+        {
+          "text": "a prompt that carries the routine, or any Agent call in an ungoverned repository, runs exactly as written",
+          "check": "mod"
         }
       ]
     }
