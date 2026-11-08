@@ -423,11 +423,9 @@ test('the agent drafts the plan, a person approves it, and it lands alone', () =
     assert.match(gmod(w.alice, 'drop-job', 'add-sum').err, /add-mul, add-neg wait for add-sum/);
     assert.match(gmod(w.alice, 'plan', '--no-sync').out, /proposal by alice@x\.io: add add-neg; change add-mul/);
 
-    // The draft isn't the plan until a person says yes, and never on a job's branch.
+    // The draft isn't the plan until a person says yes (approving from a
+    // job's branch is covered in approve-anywhere.test.mjs).
     assert.doesNotMatch(gmod(w.alice, 'next').out, /add-neg/);
-    gmod(w.alice, 'claim', 'add-sum');
-    assert.match(gmod(w.alice, 'approve').err, /a job's branch/);
-    sh(w.alice, 'git', ['switch', '-q', 'main']);
     write(w.alice, { 'README': 'work in progress\n' });
     const yes = gmod(w.alice, 'approve');
     assert.equal(yes.code, 0, yes.err);
