@@ -461,6 +461,41 @@ test('on GitHub, opening a pull request to land on green never merges it from he
   }
 });
 
+test('a managed-mode switch goes out titled by its commit, not refused as a job without one', async () => {
+  // gmod manage on commits .gmod/managed.json and publishes it like a plan:
+  // it names no job, so its pull request takes its commit's title.
+  const root = mkdtempSync(join(tmpdir(), 'gmod-managed-pr-'));
+  const bare = join(root, 'origin.git');
+  const dir = join(root, 'work');
+  const g = (...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).trim();
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
+  execFileSync('git', ['clone', '-q', bare, dir], { stdio: 'ignore' });
+  g('config', 'user.email', 'a@x.io'); g('config', 'user.name', 'a');
+  mkdirSync(join(dir, '.gmod'));
+  writeFileSync(join(dir, '.gmod', 'plan.json'), JSON.stringify({ checks: {}, jobs: [] }));
+  g('add', '-A'); g('commit', '-q', '-m', 'seed'); g('push', '-q', 'origin', 'main');
+  writeFileSync(join(dir, '.gmod', 'managed.json'), JSON.stringify({ v: 1, managed: true }, null, 2) + '\n');
+  g('add', '-A'); g('commit', '-q', '-m', 'managed: on');
+  const sha = g('rev-parse', 'HEAD');
+  const log = join(root, 'gh.log');
+  const fake = join(root, 'gh');
+  writeFileSync(fake, `#!/bin/sh\necho "$@" >> '${log}'\ncat >/dev/null\necho https://github.com/acme/app/pull/8\n`, { mode: 0o755 });
+  const before = process.env.GMOD_GH;
+  process.env.GMOD_GH = fake;
+  try {
+    const r = await publishDecision(dir, { branch: `gmod/managed-on-${sha.slice(0, 7)}`, commit: sha, forge: { kind: 'github', owner: 'acme', repo: 'app' } });
+    assert.equal(r.kind, 'managed');
+    assert.equal(r.title, 'managed: on');
+    assert.equal(r.url, 'https://github.com/acme/app/pull/8');
+    const calls = readFileSync(log, 'utf8').trim().split('\n');
+    assert.ok(calls.some(c => c.startsWith('pr create') && c.includes('managed: on')), calls.join('; '));
+    assert.ok(!calls.some(c => c.startsWith('pr merge')), `nothing merges from here: ${calls.join('; ')}`);
+  } finally {
+    if (before === undefined) delete process.env.GMOD_GH; else process.env.GMOD_GH = before;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('an approved plan goes out on a gmod/ branch of its own, to land on green with nobody merging it', async () => {
   const root = mkdtempSync(join(tmpdir(), 'gmod-plan-pr-'));
   const bare = join(root, 'origin.git');
