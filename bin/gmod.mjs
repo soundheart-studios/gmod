@@ -11,6 +11,7 @@ import * as stateLib from '../lib/state.mjs';
 import * as signalsLib from '../lib/signals.mjs';
 import * as capsLib from '../lib/capabilities.mjs';
 import * as managedLib from '../lib/managed.mjs';
+import * as stampLib from '../lib/stamp.mjs';
 import { readFileSync as readSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -21,6 +22,7 @@ const HELP = `gmod: planned work with proof, on plain git
   gmod plan                       every job and its state
   gmod state [--no-sync]          the plan and its progress (--json: the record faces like Skiff read)
   gmod signals [--no-sync]        what needs a person (--json: the signals faces like Skiff read)
+  gmod stamp                      the change stamp: read state and signals again when it differs
   gmod next                       the first job ready to take
   gmod claim <job>                take a job (a git ref on origin; first push wins)
   gmod release [job]              let a job go
@@ -322,12 +324,17 @@ async function main() {
       const s = stateLib.state(root, { sync: !flags['no-sync'] });
       return out(flags, s, stateLib.describe(s));
     }
+    case 'stamp': {
+      const s = stampLib.stamp(root);
+      return out(flags, { v: 1, stamp: s }, s);
+    }
     case 'signals': {
+      const at = stampLib.stamp(root);
       const st = core.status(root, { sync: !flags['no-sync'] });
       if (!st.governed && !st.proposal) throw new core.GmodError(`no ${core.PLAN} here (gmod init)`);
       const list = signalsLib.signalsFrom(st, { project: projectName(root) });
       // Workers are a face's own: gmod runs none, so the list is empty.
-      return out(flags, { v: signalsLib.SIGNALS_VERSION, signals: list, workers: [] }, signalsLib.describe(list));
+      return out(flags, { v: signalsLib.SIGNALS_VERSION, stamp: at, signals: list, workers: [] }, signalsLib.describe(list));
     }
     case 'next': {
       const plan = core.planFromDisk(root);
