@@ -2,6 +2,12 @@
 
 What each gmod release changes for you, with the details underneath.
 
+## 1.6.1 — 2026-11-08
+
+Reading gmod is much faster in a busy repository, and what it prints is unchanged.
+
+- **`gmod state`, `signals` and `status` no longer slow down with leftover worktrees.** A worktree whose job has already landed on main isn't checked against main's history any more, and gmod asks git where its state lives once per read instead of once per worktree. On a repository with 22 leftover agent worktrees, `gmod state --json --no-sync` went from about 3.1s to 0.8s, and from 6.3s to 2.9s with the sync. Landed jobs still show where their worktree is. (#44)
+
 ## 1.6.0 — 2026-11-08
 
 Apps like Skiff can now read gmod directly, and there's a managed mode they can use later, off unless a person turns it on.
