@@ -649,6 +649,31 @@
           "check": "suite"
         }
       ]
+    },
+    {
+      "id": "release-1-6-1",
+      "phase": "upkeep",
+      "goal": "Release gmod 1.6.1 with the faster reads",
+      "files": [
+        "package.json",
+        "package-lock.json",
+        ".claude-plugin/plugin.json",
+        "CHANGELOG.md",
+        "test/release.test.mjs"
+      ],
+      "tests": [
+        "test/release.test.mjs"
+      ],
+      "after": [
+        "fast-read"
+      ],
+      "brief": "Bump to 1.6.1 as release-1-6-0 did: `npm version 1.6.1 --no-git-tag-version` (package.json, package-lock.json root and packages[\"\"]), plugin.json by hand, and point test/release.test.mjs at 1.6.1. Add a short CHANGELOG.md 1.6.1 entry above 1.6.0, plain-English impact first: gmod state, signals and status read much faster in a repository with many leftover worktrees, because worktrees of jobs that already landed are no longer walked against main, and the git directory is asked once per read (#44); output unchanged. The release test asks for at least one bullet for a patch release. After landing, the person tags v1.6.1 on the landed commit.",
+      "done_when": [
+        {
+          "text": "package.json, package-lock.json and plugin.json all say 1.6.1, and CHANGELOG.md has a 1.6.1 entry",
+          "check": "release"
+        }
+      ]
     }
   ],
   "phases": [
