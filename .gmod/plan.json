@@ -1,0 +1,215 @@
+{
+  "main": "main",
+  "checks": {
+    "runs-on": "node --test test/setup-runs-on.test.mjs",
+    "commit-files": "node --test test/commit-files.test.mjs",
+    "ci-job": "node --test test/ci-change-job.test.mjs",
+    "pr-status": "node --test test/pr-status.test.mjs",
+    "catch-up": "node --test test/catch-up.test.mjs",
+    "state": "node --test test/state.test.mjs",
+    "signals": "node --test test/signals.test.mjs",
+    "capabilities": "node --test test/capabilities.test.mjs"
+  },
+  "jobs": [
+    {
+      "id": "setup-runs-on",
+      "phase": "fixes",
+      "goal": "setup honours --runs-on on GitHub too",
+      "brief": "setup.mjs only passes runsOn to the workflow for Gitea; on GitHub the workflow always says ubuntu-latest. Pass it for GitHub, and make doctor flag a workflow whose runs-on differs from the runner the person chose (or a self-hosted label with no runner).",
+      "files": [
+        "lib/setup.mjs",
+        "lib/ci.mjs"
+      ],
+      "tests": [
+        "test/setup-runs-on.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "setup --runs-on <label> on a GitHub repo writes runs-on: <label>",
+          "check": "runs-on"
+        },
+        {
+          "text": "doctor reports a self-hosted label that no runner carries",
+          "check": "runs-on"
+        }
+      ]
+    },
+    {
+      "id": "commit-only-job-files",
+      "phase": "fixes",
+      "goal": "gmod commit stages only the job's own files",
+      "brief": "commitJob runs git add -A, so nested repositories (e.g. agent worktrees under .claude/worktrees) and stray files end up committed as gitlinks. Stage exactly the files the last green check ran on, within the job's files and tests, plus its journal; never gitlinks.",
+      "files": [
+        "lib/core.mjs"
+      ],
+      "tests": [
+        "test/commit-files.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "a nested git repository in the worktree is not committed",
+          "check": "commit-files"
+        },
+        {
+          "text": "an untracked file outside the job is not committed",
+          "check": "commit-files"
+        }
+      ]
+    },
+    {
+      "id": "ci-change-job",
+      "phase": "fixes",
+      "goal": "A CI change can be made as a planned job",
+      "brief": "The gate passes a CI change only when it carries CI files alone, but a job always adds its journal and a test, so no job can change CI. Let a job whose files are all CI/governance files land as a governance change: its journal is allowed, and its check may be a governance check under .gmod/ rather than a test file. Keep: CI changes never mixed with code.",
+      "files": [
+        "ci/action.mjs",
+        "lib/core.mjs",
+        "lib/receive.mjs"
+      ],
+      "tests": [
+        "test/ci-change-job.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "a job changing only the workflow passes the gate as a governance change",
+          "check": "ci-job"
+        },
+        {
+          "text": "a job mixing workflow and code is still refused",
+          "check": "ci-job"
+        }
+      ],
+      "after": [
+        "commit-only-job-files"
+      ]
+    },
+    {
+      "id": "pr-status-github",
+      "phase": "fixes",
+      "goal": "pr --status works on GitHub",
+      "brief": "prStatus throws on anything but Gitea. Read the PR's checks and the gate's and review's reports through gh on GitHub (and glab on GitLab if cheap), so agents can follow their pull requests with mcp__gmod__pr_status.",
+      "files": [
+        "lib/ci.mjs",
+        "lib/gitlab.mjs"
+      ],
+      "tests": [
+        "test/pr-status.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "pr --status on a GitHub repo reports the checks and both reports from recorded gh output",
+          "check": "pr-status"
+        }
+      ],
+      "after": [
+        "setup-runs-on"
+      ]
+    },
+    {
+      "id": "catch-up-checks",
+      "phase": "fixes",
+      "goal": "Branches gmod catches up get checked without a person",
+      "brief": "After a landing, CI merges main into open job branches as github-actions[bot]; GitHub then holds those pull_request runs as action_required, so they wait for a person. After a catch-up, start the gate through repository_dispatch (already in the workflow) for that branch, or push as the GitHub App when one is set, so no run needs approval. Doctor says which path is in use.",
+      "files": [
+        "ci/after-merge.mjs",
+        "lib/app.mjs"
+      ],
+      "tests": [
+        "test/catch-up.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "a catch-up dispatches a gate run for the branch instead of relying on the bot push",
+          "check": "catch-up"
+        }
+      ]
+    },
+    {
+      "id": "state-json",
+      "phase": "contract",
+      "goal": "gmod state --json prints the plan and its progress",
+      "brief": "DESIGN E1 (in ~/skiff/DESIGN.md 6.3, 6.4): a state record {v:1, project, plan (phases, backlog, voyages when present), jobs with state, modality if declared, ruleset if any, activity} built from plan.json, claims, main's history and the journal. Skiff already reads this shape from recordings: match ~/skiff/crates/skiff-host/tests/fixtures/gmod/v1/state/*.json, which define the contract.",
+      "files": [
+        "lib/state.mjs",
+        "bin/gmod.mjs"
+      ],
+      "tests": [
+        "test/state.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "state --json on a test repo lists phases, jobs and their states",
+          "check": "state"
+        },
+        {
+          "text": "a job with a landed <job>: commit shows as proven",
+          "check": "state"
+        }
+      ]
+    },
+    {
+      "id": "signals-json",
+      "phase": "contract",
+      "goal": "gmod signals --json lists what needs a person",
+      "brief": "DESIGN E1 and D9/D10: move the pane's Needs-you logic (hooks/register.tsx) into lib/signals.mjs, computed from state, never stored; each signal has a stable id (hash of its cause), kind decide|unstick|know, a plain question, evidence and actions. The pane then calls the same function. Match the shape in ~/skiff/crates/skiff-host/tests/fixtures/gmod/v1/signals/*.json.",
+      "files": [
+        "lib/signals.mjs",
+        "bin/gmod.mjs",
+        "hooks/register.tsx"
+      ],
+      "tests": [
+        "test/signals.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "a pending proposal and a stuck job each give a signal with a stable id",
+          "check": "signals"
+        },
+        {
+          "text": "a resolved cause no longer gives its signal",
+          "check": "signals"
+        }
+      ],
+      "after": [
+        "state-json"
+      ]
+    },
+    {
+      "id": "capabilities-json",
+      "phase": "contract",
+      "goal": "gmod capabilities --json says what this gmod speaks",
+      "brief": "DESIGN E2 and 6.5: {v:1, engine:\"gmod\", version, protocol:\"1.0\", enforcers:[...], presets?, inventory?}. Skiff refuses a protocol major it does not know; match ~/skiff/crates/skiff-host/tests/fixtures/gmod/v1/gmod.",
+      "files": [
+        "lib/capabilities.mjs",
+        "bin/gmod.mjs"
+      ],
+      "tests": [
+        "test/capabilities.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "capabilities --json prints the version, protocol 1.x and the enforcers",
+          "check": "capabilities"
+        }
+      ],
+      "after": [
+        "signals-json"
+      ]
+    }
+  ],
+  "phases": [
+    {
+      "id": "fixes",
+      "title": "Fixes",
+      "outcome": "Setting up and running gmod on GitHub works without hand edits or a person approving each run."
+    },
+    {
+      "id": "contract",
+      "title": "Contract for faces",
+      "outcome": "A face like Skiff can read gmod's version, state and signals as JSON, without the pane.",
+      "after": [
+        "fixes"
+      ]
+    }
+  ]
+}
