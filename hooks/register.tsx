@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { GmodJob, GmodPhase, GmodProposal, GmodStatus } from '../types'
-import { decidesPlan, mergesPr, movesClaims, writesPlan, writesRecords } from './shell'
+import { commitDirs, decidesPlan, mergesPr, movesClaims, resolveDir, writesPlan, writesRecords } from './shell'
 
 // The mod is thin: every rule lives in the gmod command (bin/gmod.mjs), the
 // same one people run at a terminal and CI runs on pull requests.
@@ -101,12 +101,21 @@ async function guard($: EngineInterface, path: string): Promise<string | null> {
   return r.exitCode === 0 ? null : `gmod: ${text(r)}`
 }
 
-// The commit gate runs inside the agent's own shell, as `git commit` starts:
-// wherever the shell is by then (a subagent's worktree, after a cd), that
-// worktree's claim and runs decide.
-function gated(cli: string, command: string): string {
-  const q = `'${cli.replace(/'/g, `'\\''`)}'`
-  return `git() { _gs=; _gk=0; _gp=; _gd=.; for _ga in "$@"; do if [ "$_gk" = 1 ]; then _gk=0; [ "$_gp" = -C ] && _gd="$_ga"; continue; fi; case "$_ga" in -C|-c|--git-dir|--work-tree|--namespace) _gk=1; _gp="$_ga";; -*) ;; *) _gs="$_ga"; break;; esac; done; if [ "$_gs" = commit ]; then node ${q} gate-commit --shell --dir "$_gd" || return 1; fi; command git "$@"; }\n${command}`
+// The commit gate runs in the hook, before the command, for the worktree each
+// `git commit` in it commits in (after a cd, or git -C): that worktree's claim
+// and runs decide. The command itself runs exactly as written, so what auto
+// mode reviewed is what runs. A refusal stops the whole command.
+async function gateCommits($: EngineInterface, cmd: string): Promise<string | null> {
+  const dirs = commitDirs(cmd)
+  if (!dirs.length) return null
+  const cwd = await $.session.cwd()
+  let home: string | undefined
+  if (dirs.some(d => d.startsWith('~'))) home = (await $.process.run(['sh', '-c', 'printf %s "$HOME"'], { cwd })).stdout.trim() || undefined
+  for (const d of dirs) {
+    const r = await gmod($, ['gate-commit', '--shell', '--dir', resolveDir(cwd, d, home)])
+    if (r.exitCode !== 0) return `gmod: ${(r.stderr || r.stdout).trim() || 'the commit gate refused this commit'}`
+  }
+  return null
 }
 
 // One dot per step, under the step's name: each column is the name's width
@@ -325,8 +334,9 @@ export const register: Register = on => {
     if (writesPlan(cmd) && !(await read($, allowPlan))) {
       return { deny: 'gmod: .gmod/plan.json changes only through a proposal the person approves (mcp__gmod__propose_job), or after /gmod allow-plan' }
     }
-    const command = /\bcommit\b/.test(cmd) ? gated(`${$.plugin.root}/bin/gmod.mjs`, cmd) : cmd
-    const ran = await next(command === cmd ? e : { ...e, command })
+    const refused = await gateCommits($, cmd)
+    if (refused) return { deny: refused }
+    const ran = await next(e)
     if (/\bgit\b|gmod/.test(cmd)) await refresh($)
     return withNotice($, ran, await $.session.cwd())
   }).catch(($, e, next) => (next.called ? next(e) : { deny: 'gmod: its command guard failed; nothing ran' }))
