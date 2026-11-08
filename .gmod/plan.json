@@ -772,7 +772,7 @@
       "id": "surfaces-doc",
       "phase": "surfaces",
       "goal": "One page says what every surface can rely on",
-      "brief": "Add docs/surfaces.md, the surfaces contract: the surfaces table and the five items (stamp, shared vs local state, gmod decide, stable signal ids, versioning), plus core vs managed. The draft is ready to copy from the planning session's scratchpad (surfaces.md); it follows the ADR \"What gmod shares and what stays local\". Link it from docs/reference.md. The test keeps the page honest: it names every command and shared ref the contract promises.",
+      "brief": "Add docs/surfaces.md, the one-page surfaces contract: the surfaces table (pane, CLI, CI gate + reviewer, Skiff, Linear, other agents: where each runs and what it needs), then the five items as this plan builds them: the change stamp (stamp job), shared vs local state as a table (ADR \"What gmod shares and what stays local\"), gmod decide and how it keeps decisions a person's (decide job), stable signal ids and their causes (signal-ids job), and versioning (protocol v1, additive; v2 only for a real break), plus why these are core and not managed (ADR 0001). Write it as the contract 1.7 promises; later jobs make it true. Link it from docs/reference.md. The test keeps it honest: it names every command and shared ref the contract promises.",
       "files": [
         "docs/surfaces.md",
         "docs/reference.md"
