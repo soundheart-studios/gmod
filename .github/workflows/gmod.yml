@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions: { contents: write, pull-requests: write, issues: write, statuses: write }
     steps:
-      - uses: soundheart-studios/gmod@v1.6.1
+      - uses: soundheart-studios/gmod@v1.6.2
         with:
           reviewer-url: https://api.deepseek.com/v1
           reviewer-model: deepseek-flash
