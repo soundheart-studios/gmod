@@ -90,6 +90,15 @@ test('a commit the gate refuses never reaches the shell', async ($, on) => {
   expect(seen.calls.some(c => c.tool === 'Bash')).toBe(false)
 })
 
+test('a commit bundled with anything that could change files is refused before it runs', async ($, on) => {
+  const seen = engine(on, () => ({ exitCode: 0, stdout: STATUS }))
+  for (const cmd of ['echo x >> src/a.mjs && git commit -am x', 'eval "git commit -m x"', 'git apply p.diff && git commit -am x']) {
+    const out = await $.tool.call({ tool: 'Bash', command: cmd })
+    expect(out.deny).toContain('on its own')
+  }
+  expect(seen.calls.some(c => c.tool === 'Bash')).toBe(false)
+})
+
 test('a command that only mentions commit runs exactly as written, ungated', async ($, on) => {
   const seen = engine(on, () => ({ exitCode: 0, stdout: STATUS }))
   for (const cmd of ['grep -n commit hooks/register.tsx', 'git log --oneline -S "bcommit"', 'ls']) {
