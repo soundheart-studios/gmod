@@ -24,7 +24,8 @@
     "ci-pin": "grep -q 'uses: soundheart-studios/gmod@v1.6.0' .github/workflows/gmod.yml",
     "fast-read": "node --test test/fast-read.test.mjs",
     "ci-pin-1-6-1": "grep -q 'uses: soundheart-studios/gmod@v1.6.1' .github/workflows/gmod.yml",
-    "ci-tests": "node --test test/ci.test.mjs"
+    "ci-tests": "node --test test/ci.test.mjs",
+    "ci-pin-1-6-2": "grep -q \"uses: soundheart-studios/gmod@v1.6.2\" .github/workflows/gmod.yml"
   },
   "jobs": [
     {
@@ -737,6 +738,25 @@
         {
           "text": "package.json, package-lock.json and plugin.json all say 1.6.2, and CHANGELOG.md has a 1.6.2 entry",
           "check": "release"
+        }
+      ]
+    },
+    {
+      "id": "ci-gmod-1-6-2",
+      "phase": "upkeep",
+      "goal": "CI runs gmod 1.6.2 instead of 1.6.1",
+      "files": [
+        ".github/workflows/gmod.yml"
+      ],
+      "tests": [],
+      "after": [
+        "release-1-6-2"
+      ],
+      "brief": "Change `uses: soundheart-studios/gmod@v1.6.1` to `@v1.6.2` in .github/workflows/gmod.yml (line 16), nothing else. It lands as a CI change made by a job (CI files only).",
+      "done_when": [
+        {
+          "text": "the gmod workflow uses soundheart-studios/gmod@v1.6.2",
+          "check": "ci-pin-1-6-2"
         }
       ]
     }
