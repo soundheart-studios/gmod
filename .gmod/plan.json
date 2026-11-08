@@ -357,7 +357,8 @@
         "npm-test-all",
         "bash-hook-no-rewrite",
         "approve-anywhere",
-        "agent-hook-no-rewrite"
+        "agent-hook-no-rewrite",
+        "commit-alone"
       ]
     },
     {
@@ -423,7 +424,8 @@
       "phase": "fixes",
       "goal": "Subagent prompts are never changed by gmod's hook",
       "after": [
-        "bash-hook-no-rewrite"
+        "bash-hook-no-rewrite",
+        "commit-alone"
       ],
       "files": [
         "hooks/register.tsx"
@@ -439,6 +441,30 @@
         },
         {
           "text": "a prompt that carries the routine, or any Agent call in an ungoverned repository, runs exactly as written",
+          "check": "mod"
+        }
+      ]
+    },
+    {
+      "id": "commit-alone",
+      "phase": "fixes",
+      "goal": "A commit bundled with file changes is refused",
+      "files": [
+        "hooks/register.tsx",
+        "hooks/shell.ts"
+      ],
+      "tests": [
+        "test/shell.test.ts",
+        "test/mod.test.tsx"
+      ],
+      "brief": "bash-hook-no-rewrite landed (PR #17) before its third criterion's code, when the npx check let its gate pass: the commit gate now runs in the hook before the command, so `echo x >> f && git commit -am x` commits what the gate never saw. Add commitsAlone(cmd) to hooks/shell.ts: a command that runs git commit may beside it only cd/pushd/popd and git add/commit/status/diff/log/show/rev-parse, with no redirection into a file and no $(…) beyond cat/printf (heredoc messages); a commit inside eval, sh/bash -c, xargs, source or a shell function is refused. The hook denies such a command with 'a commit runs on its own' before gating. The reader keeps heredoc bodies as one word and reads 2>&1 / &> as redirections. The code is written on gmod/bash-hook-no-rewrite (PR #23, refused because that job is done); carry it over.",
+      "done_when": [
+        {
+          "text": "a command that runs git commit and also anything but cd and quiet git (an edit, eval, sh -c, a function) is refused before it runs",
+          "check": "mod"
+        },
+        {
+          "text": "a commit with git add, cd, a heredoc message or 2>&1 still runs exactly as written",
           "check": "mod"
         }
       ]
