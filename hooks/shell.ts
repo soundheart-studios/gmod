@@ -47,6 +47,118 @@ export function decidesPlan(cmd: string): boolean {
   return /\bgmod(?:\.mjs)?['"]?\s+(?:adr\s+)?(?:approve|reject|accept)\b/.test(cmd)
 }
 
+// The words of a command, list by list: quotes and escapes respected, so a
+// commit message or an echo that says `git commit` is one word, not a
+// command; a comment ends at its line; $(…) and `…` stay inside their word.
+function lists(cmd: string): string[][] {
+  const out: string[][] = [[]]
+  let word: string | null = null
+  const end = () => {
+    if (word !== null) out.at(-1)!.push(word)
+    word = null
+  }
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i]!
+    if (c === '\\' && i + 1 < cmd.length) {
+      word = (word ?? '') + (cmd[i + 1] === '\n' ? '' : cmd[i + 1])
+      i++
+    } else if (c === "'") {
+      const j = cmd.indexOf("'", i + 1)
+      const stop = j < 0 ? cmd.length : j
+      word = (word ?? '') + cmd.slice(i + 1, stop)
+      i = stop
+    } else if (c === '"') {
+      let s = ''
+      i++
+      while (i < cmd.length && cmd[i] !== '"') {
+        if (cmd[i] === '\\' && i + 1 < cmd.length) i++
+        s += cmd[i]
+        i++
+      }
+      word = (word ?? '') + s
+    } else if ((c === '$' && cmd[i + 1] === '(') || c === '`') {
+      // Kept whole: what runs inside is judged as text, not as a command here.
+      let depth = 0
+      let j = i
+      if (c === '`') j = cmd.indexOf('`', i + 1)
+      else
+        for (j = i + 1; j < cmd.length; j++) {
+          if (cmd[j] === '(') depth++
+          else if (cmd[j] === ')' && --depth === 0) break
+        }
+      const stop = j < 0 ? cmd.length - 1 : Math.min(j, cmd.length - 1)
+      word = (word ?? '') + cmd.slice(i, stop + 1)
+      i = stop
+    } else if (c === '#' && word === null) {
+      while (i + 1 < cmd.length && cmd[i + 1] !== '\n') i++
+    } else if (/[;&|()\n]/.test(c)) {
+      end()
+      if (out.at(-1)!.length) out.push([])
+    } else if (/\s/.test(c)) {
+      end()
+    } else {
+      word = (word ?? '') + c
+    }
+  }
+  end()
+  return out.filter(l => l.length)
+}
+
+// A path the way a shell would reach it from `base` (both as written: `.`,
+// relative, absolute or under ~).
+function within(base: string, dir: string): string {
+  const path = /^[/~]/.test(dir) || base === '.' ? dir : `${base}/${dir}`
+  const abs = path.startsWith('/')
+  const parts: string[] = []
+  for (const p of path.split('/')) {
+    if (p === '' || p === '.') continue
+    if (p === '..' && parts.length && parts.at(-1) !== '..' && parts.at(-1) !== '~') parts.pop()
+    else if (!(p === '..' && abs && !parts.length)) parts.push(p)
+  }
+  return (abs ? '/' : '') + parts.join('/') || (abs ? '/' : '.')
+}
+
+// Where each `git commit` in a command runs, as written from the command's
+// start: `.`, `../wt`, `/abs`, `~/x`. Follows `cd` along the command and
+// `git -C`. Empty when the command commits nothing, whatever words it says.
+export function commitDirs(cmd: string): string[] {
+  const dirs: string[] = []
+  let here = '.'
+  for (const words of lists(cmd)) {
+    let i = 0
+    while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]!)) i++
+    while (i < words.length && ['command', 'exec', 'time', 'nice'].includes(words[i]!)) i++
+    const name = (words[i] ?? '').replace(/^.*\//, '')
+    const args = words.slice(i + 1)
+    if (name === 'cd' || name === 'pushd') {
+      const to = args.find(a => !a.startsWith('-')) ?? '~'
+      here = within(here, to)
+    } else if (name === 'git') {
+      let dir = here
+      let sub = ''
+      for (let k = 0; k < args.length; k++) {
+        const a = args[k]!
+        if (['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env'].includes(a)) {
+          if (a === '-C' && args[k + 1] !== undefined) dir = within(dir, args[k + 1]!)
+          k++
+        } else if (a.startsWith('-')) continue
+        else {
+          sub = a
+          break
+        }
+      }
+      if (sub === 'commit' && !dirs.includes(dir)) dirs.push(dir)
+    }
+  }
+  return dirs
+}
+
+// The directory a `commitDirs` entry names, seen from the session's cwd.
+export function resolveDir(cwd: string, dir: string, home?: string): string {
+  const d = home && /^~(\/|$)/.test(dir) ? home + dir.slice(1) : dir
+  return within(cwd, d)
+}
+
 // Merging a pull request by hand: the forge's CLI or its merge endpoint. An
 // agent hands a job over with gmod pr --auto, which lets the forge merge it
 // once the gate (and the review) pass, and never a plan, ADR or CI change.

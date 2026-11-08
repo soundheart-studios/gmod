@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { decidesPlan, mergesPr, movesClaims, writesPlan, writesRecords } from '../hooks/shell'
+import { commitDirs, decidesPlan, mergesPr, movesClaims, writesPlan, writesRecords } from '../hooks/shell'
 
 test('reading the plan is never a write', () => {
   for (const cmd of [
@@ -62,4 +62,25 @@ test('merging a pull request by hand is caught; gmod pr --auto is not', () => {
   expect(mergesPr('curl http://git.example.lan:3000/api/v1/repos/acme/shop/pulls/3')).toBe(false)
   expect(mergesPr("git commit -m 'pr --auto: like gh pr merge --auto, the forge merges on green (a POST to /pulls/4/merge)'")).toBe(false)
   expect(mergesPr('cd x && gh pr merge 3')).toBe(true)
+})
+
+test('a git commit is found with the directory it runs in; a mention of commit is not', () => {
+  expect(commitDirs('git commit -m x')).toEqual(['.'])
+  expect(commitDirs('git add -A && git commit -m "add-sum: x"')).toEqual(['.'])
+  expect(commitDirs('git -C ../wt commit -m x')).toEqual(['../wt'])
+  expect(commitDirs('git -c user.name=a --no-pager commit -m x')).toEqual(['.'])
+  expect(commitDirs('cd ../wt && git add -A && git commit -m x')).toEqual(['../wt'])
+  expect(commitDirs('cd /a/b; git -C c commit')).toEqual(['/a/b/c'])
+  expect(commitDirs('cd a && git -C /abs commit')).toEqual(['/abs'])
+  expect(commitDirs('FOO=1 /usr/bin/git commit --amend')).toEqual(['.'])
+  expect(commitDirs('git status\ngit commit')).toEqual(['.'])
+  for (const cmd of [
+    'grep -n commit hooks/register.tsx',
+    'git log --oneline -S "bcommit"',
+    "echo 'git commit -m x'",
+    'git show --stat ec03333 # not a commit',
+    'git log --format="%H commit" ; ls',
+    'gh pr list --search "git commit && git push"',
+    'git -C commit status',
+  ]) expect(commitDirs(cmd)).toEqual([])
 })
