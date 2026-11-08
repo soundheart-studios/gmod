@@ -8,15 +8,17 @@ import * as rcv from '../lib/receive.mjs';
 import * as setupLib from '../lib/setup.mjs';
 import * as runnerLib from '../lib/runner.mjs';
 import * as stateLib from '../lib/state.mjs';
+import * as signalsLib from '../lib/signals.mjs';
 import { readFileSync as readSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 const HELP = `gmod: planned work with proof, on plain git
 
   gmod init                       write a starter .gmod/plan.json
   gmod plan                       every job and its state
   gmod state [--no-sync]          the plan and its progress (--json: the record faces like Skiff read)
+  gmod signals [--no-sync]        what needs a person (--json: the signals faces like Skiff read)
   gmod next                       the first job ready to take
   gmod claim <job>                take a job (a git ref on origin; first push wins)
   gmod release [job]              let a job go
@@ -115,6 +117,15 @@ function parse(argv) {
     else flags[a.slice(2)] = argv[++i];
   }
   return { cmd: rest[0], args: rest.slice(1), flags };
+}
+
+// The repository's name, as `gmod state` gives it: the folder of its main
+// checkout, so every worktree of it reports the same project.
+function projectName(root) {
+  const common = core.git(['rev-parse', '--git-common-dir'], { cwd: root, allow: true });
+  if (!common.ok) return basename(root);
+  const dir = resolve(root, common.out);
+  return basename(basename(dir) === '.git' ? dirname(dir) : dir.replace(/\.git$/, ''));
 }
 
 // The forge's web address, to pick the matching tea login; none when unknown.
@@ -288,6 +299,13 @@ async function main() {
     case 'state': {
       const s = stateLib.state(root, { sync: !flags['no-sync'] });
       return out(flags, s, stateLib.describe(s));
+    }
+    case 'signals': {
+      const st = core.status(root, { sync: !flags['no-sync'] });
+      if (!st.governed && !st.proposal) throw new core.GmodError(`no ${core.PLAN} here (gmod init)`);
+      const list = signalsLib.signalsFrom(st, { project: projectName(root) });
+      // Workers are a face's own: gmod runs none, so the list is empty.
+      return out(flags, { v: signalsLib.SIGNALS_VERSION, signals: list, workers: [] }, signalsLib.describe(list));
     }
     case 'next': {
       const plan = core.planFromDisk(root);
