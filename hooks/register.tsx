@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { GmodJob, GmodPhase, GmodProposal, GmodStatus } from '../types'
-import { commitDirs, decidesPlan, mergesPr, movesClaims, resolveDir, writesPlan, writesRecords } from './shell'
+import { commitDirs, commitsAlone, decidesPlan, mergesPr, movesClaims, resolveDir, writesPlan, writesRecords } from './shell'
 
 // The mod is thin: every rule lives in the gmod command (bin/gmod.mjs), the
 // same one people run at a terminal and CI runs on pull requests.
@@ -333,6 +333,9 @@ export const register: Register = on => {
     if (writesRecords(cmd)) return { deny: "gmod: gmod's own records change only through gmod" }
     if (writesPlan(cmd) && !(await read($, allowPlan))) {
       return { deny: 'gmod: .gmod/plan.json changes only through a proposal the person approves (mcp__gmod__propose_job), or after /gmod allow-plan' }
+    }
+    if (!commitsAlone(cmd)) {
+      return { deny: 'gmod: a commit runs on its own: beside git commit, only cd and git that changes no file (add, status, diff, log, show). Run the rest first, then commit, so what is committed is what the gate saw' }
     }
     const refused = await gateCommits($, cmd)
     if (refused) return { deny: refused }

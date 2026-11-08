@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { commitDirs, decidesPlan, mergesPr, movesClaims, writesPlan, writesRecords } from '../hooks/shell'
+import { commitDirs, commitsAlone, decidesPlan, mergesPr, movesClaims, writesPlan, writesRecords } from '../hooks/shell'
 
 test('reading the plan is never a write', () => {
   for (const cmd of [
@@ -83,4 +83,32 @@ test('a git commit is found with the directory it runs in; a mention of commit i
     'gh pr list --search "git commit && git push"',
     'git -C commit status',
   ]) expect(commitDirs(cmd)).toEqual([])
+})
+
+test('a commit travels on its own: beside it only cd and git that changes no file', () => {
+  for (const cmd of [
+    'ls',
+    'grep -n commit hooks/register.tsx | head',
+    'git commit -m x',
+    'git add -A && git commit -m "add-sum: x"',
+    'cd ../wt && git add src && git commit -m x && git status --short',
+    'git -C ../wt add -A && git -C ../wt commit -m x && git log --oneline -1',
+    "git commit -m \"$(cat <<'EOF'\nadd-sum: x (and y)\n\nCo-Authored-By: a <a@x.io>\nEOF\n)\"",
+    'git commit -q -m x 2>&1',
+    'git commit -m x > /dev/null',
+  ]) expect(commitsAlone(cmd)).toBe(true)
+  for (const cmd of [
+    'echo x >> src/a.mjs && git commit -am x',
+    'git commit -m x; rm -rf src',
+    'npm run fmt && git add -A && git commit -m x',
+    'git apply p.diff && git commit -am x',
+    'git checkout -- src && git commit -am x',
+    'git stash pop && git commit -am x',
+    'git status > src/a.mjs && git commit -am x',
+    'git commit -m "$(echo x > src/a.mjs)"',
+    'f() { git commit -m x; }; f',
+    'eval "git commit -m x"',
+    "sh -c 'git commit -m x'",
+    "bash -lc 'cd ../wt && git commit -m x'",
+  ]) expect(commitsAlone(cmd)).toBe(false)
 })

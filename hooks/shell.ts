@@ -91,6 +91,23 @@ function lists(cmd: string): string[][] {
       i = stop
     } else if (c === '#' && word === null) {
       while (i + 1 < cmd.length && cmd[i + 1] !== '\n') i++
+    } else if (c === '<' && cmd[i + 1] === '<' && cmd[i + 2] !== '<') {
+      // A heredoc: its body is text for the command, not commands. It is
+      // kept as one word, `<<DELIM` plus the body, up to the closing line.
+      const m = cmd.slice(i).match(/^<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/)
+      const nl = cmd.indexOf('\n', i)
+      if (!m || nl < 0) {
+        word = (word ?? '') + c
+        continue
+      }
+      const close = new RegExp(String.raw`\n[\t ]*${m[2]}[\t ]*(?=\n|$)`).exec(cmd.slice(nl))
+      const stop = close ? nl + close.index + close[0].length : cmd.length
+      end()
+      out.at(-1)!.push(`<<${m[2]}${cmd.slice(i + m[0].length, stop)}`)
+      i = stop - 1
+    } else if (c === '&' && (cmd[i - 1] === '>' || (cmd[i + 1] === '>' && word === null))) {
+      // Part of a redirection: 2>&1, >&2, &>file.
+      word = (word ?? '') + c
     } else if (/[;&|()\n]/.test(c)) {
       end()
       if (out.at(-1)!.length) out.push([])
@@ -125,32 +142,86 @@ export function commitDirs(cmd: string): string[] {
   const dirs: string[] = []
   let here = '.'
   for (const words of lists(cmd)) {
-    let i = 0
-    while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]!)) i++
-    while (i < words.length && ['command', 'exec', 'time', 'nice'].includes(words[i]!)) i++
-    const name = (words[i] ?? '').replace(/^.*\//, '')
-    const args = words.slice(i + 1)
-    if (name === 'cd' || name === 'pushd') {
-      const to = args.find(a => !a.startsWith('-')) ?? '~'
-      here = within(here, to)
-    } else if (name === 'git') {
-      let dir = here
-      let sub = ''
-      for (let k = 0; k < args.length; k++) {
-        const a = args[k]!
-        if (['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env'].includes(a)) {
-          if (a === '-C' && args[k + 1] !== undefined) dir = within(dir, args[k + 1]!)
-          k++
-        } else if (a.startsWith('-')) continue
-        else {
-          sub = a
-          break
-        }
-      }
+    const { name, args } = simple(words)
+    if (name === 'cd' || name === 'pushd') here = within(here, args.find(a => !a.startsWith('-')) ?? '~')
+    else if (name === 'git') {
+      const { dir, sub } = gitCall(args, here)
       if (sub === 'commit' && !dirs.includes(dir)) dirs.push(dir)
     }
   }
   return dirs
+}
+
+// A simple command's name and arguments, past `FOO=1` and `command`/`env`.
+function simple(words: string[]): { name: string; args: string[] } {
+  let i = 0
+  while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]!)) i++
+  while (i < words.length && ['command', 'exec', 'time', 'nice', 'env'].includes(words[i]!)) {
+    i++
+    while (i < words.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]!)) i++
+  }
+  return { name: (words[i] ?? '').replace(/^.*\//, ''), args: words.slice(i + 1) }
+}
+
+// A git call's subcommand and the directory it runs in (git -C).
+function gitCall(args: string[], here: string): { dir: string; sub: string; rest: string[] } {
+  let dir = here
+  for (let k = 0; k < args.length; k++) {
+    const a = args[k]!
+    if (['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env'].includes(a)) {
+      if (a === '-C' && args[k + 1] !== undefined) dir = within(dir, args[k + 1]!)
+      k++
+    } else if (!a.startsWith('-')) return { dir, sub: a, rest: args.slice(k + 1) }
+  }
+  return { dir, sub: '', rest: [] }
+}
+
+// Git that changes no file in the worktree: what may sit beside a commit.
+const QUIET_GIT = ['add', 'commit', 'status', 'diff', 'log', 'show', 'rev-parse']
+// What runs a command given as text: a commit inside is out of the gate's sight.
+const RUNNERS = ['eval', 'sh', 'bash', 'zsh', 'dash', 'ksh', 'xargs', 'source', '.', 'parallel', 'watch']
+const COMMITS = /\bgit\b[\s\S]*\bcommit\b/
+
+// A redirection that writes a file (not /dev/null, not another descriptor).
+function writesFile(words: string[]): boolean {
+  for (let k = 0; k < words.length; k++) {
+    const m = words[k]!.match(/^(?:\d*|&)>{1,2}\|?(.*)$/)
+    if (!m) continue
+    const to = m[1] || words[k + 1] || ''
+    if (!/^(?:\/dev\/null|&\d|&-)$/.test(to)) return true
+  }
+  return false
+}
+
+// A $(…) or `…` inside a word that does more than print text: only cat and
+// printf (a heredoc message) are let through, and never with a redirection.
+function runsMore(words: string[]): boolean {
+  return words.some(w => {
+    for (const m of w.matchAll(/\$\(([\s\S]*)\)|`([^`]*)`/g)) {
+      const inner = (m[1] ?? m[2] ?? '').trim()
+      const head = inner.split('<<')[0]!
+      if (!/^(?:cat|printf)\b/.test(inner) || />/.test(head)) return true
+    }
+    return false
+  })
+}
+
+// Whether a command commits on its own: when it runs `git commit`, beside it
+// there is only cd and git that changes no file, so what is committed is
+// what the gate saw before the command ran. A commit run through eval, sh -c,
+// xargs or a function is never on its own. A command that commits nothing is.
+export function commitsAlone(cmd: string): boolean {
+  const all = lists(cmd)
+  if (/\(\s*\)\s*\{/.test(cmd) && COMMITS.test(cmd)) return false
+  if (all.some(words => RUNNERS.includes(simple(words).name) && COMMITS.test(simple(words).args.join(' ')))) return false
+  if (!commitDirs(cmd).length) return true
+  return all.every(words => {
+    const { name, args } = simple(words)
+    if (name === 'cd' || name === 'pushd' || name === 'popd') return !writesFile(args)
+    if (name !== 'git') return false
+    const { sub } = gitCall(args, '.')
+    return QUIET_GIT.includes(sub) && !writesFile(args) && !runsMore(args)
+  })
 }
 
 // The directory a `commitDirs` entry names, seen from the session's cwd.
