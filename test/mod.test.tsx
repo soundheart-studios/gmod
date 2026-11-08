@@ -139,6 +139,21 @@ test("switching managed mode is the person's decision, at their own prompt", asy
   expect(approve).toBe("gmod: approving or rejecting the plan is the person's decision: they do it in the gmod pane or with /gmod approve")
 })
 
+test('a command that only mentions a decision runs; a decision is still refused, in the same words', async ($, on) => {
+  engine(on, () => ({ exitCode: 0, stdout: STATUS }))
+  for (const command of ["grep 'gmod approve' test/mod.test.tsx", "echo 'gmod adr accept 3 is for people'", 'git commit -m "refuse gmod reject from the shell"']) {
+    expect([command, (await $.tool.call({ tool: 'Bash', command })).deny]).toEqual([command, undefined])
+  }
+  for (const command of ['node ~/gmod/bin/gmod.mjs approve', 'cd x && gmod reject', "sh -c 'gmod adr accept 3'"]) {
+    const deny = (await $.tool.call({ tool: 'Bash', command })).deny
+    expect([command, deny]).toEqual([command, "gmod: approving or rejecting the plan is the person's decision: they do it in the gmod pane or with /gmod approve"])
+  }
+  for (const command of ['gmod manage on', "bash -lc 'gmod manage off'"]) {
+    const deny = (await $.tool.call({ tool: 'Bash', command })).deny
+    expect([command, deny]).toEqual([command, "gmod: switching managed mode is the person's decision: they make it with gmod manage on|off at their own prompt"])
+  }
+})
+
 test("gmod's own records can't be written from the shell", async ($, on) => {
   engine(on, () => ({ exitCode: 0, stdout: STATUS }))
   expect((await $.tool.call({ tool: 'Bash', command: 'echo [] > .git/gmod/evidence/add-sum.json' })).deny).toContain('own records')
