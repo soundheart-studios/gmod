@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { commitDirs, commitsAlone, decidesPlan, mergesPr, movesClaims, writesPlan, writesRecords } from '../hooks/shell'
+import { commitDirs, commitsAlone, decidesPlan, decision, mergesPr, movesClaims, writesPlan, writesRecords } from '../hooks/shell'
 
 test('reading the plan is never a write', () => {
   for (const cmd of [
@@ -76,6 +76,46 @@ test('switching managed mode is a decision; reading it is not', () => {
   expect(decidesPlan('git commit -m "gmod manage on is refused"')).toBe(false)
   expect(decidesPlan('gmod managed on')).toBe(false)
   expect(decidesPlan('gmod status manage on')).toBe(false)
+})
+
+test('approving, rejecting and accepting are read word by word: a mention is text', () => {
+  for (const cmd of [
+    "grep 'gmod approve' test/mod.test.tsx",
+    'grep -rn "gmod adr accept" docs',
+    "echo 'run gmod reject yourself'",
+    'git commit -m "refuse gmod approve from the shell"',
+    'git commit -m "gmod adr accept stays the person\'s"',
+    'rg "gmod(\\.mjs)? approve" hooks',
+    'gmod proposal',
+    'gmod adr list',
+    'gmod adr propose {}',
+    'gmod status approve',
+    'gmod approved',
+    'cat approve.txt',
+  ]) expect([cmd, decision(cmd), decidesPlan(cmd)]).toEqual([cmd, null, false])
+  for (const cmd of [
+    'gmod approve',
+    'gmod reject',
+    'gmod --json approve',
+    'gmod adr accept 3',
+    'gmod adr reject 3 "not now"',
+    'node ~/gmod/bin/gmod.mjs approve',
+    "node '/x/gmod.mjs' reject 'no'",
+    'node "/x y/gmod.mjs" adr accept cents-only',
+    'npx gmod approve',
+    'cd x && gmod reject',
+    'FOO=1 env gmod approve',
+    "sh -c 'gmod adr accept 3'",
+    'bash -lc "node bin/gmod.mjs approve"',
+    'eval "gmod reject"',
+    'echo hi; gmod approve',
+    'echo "gmod approve" | sh',
+    'echo $(gmod reject)',
+    'ls | xargs gmod adr accept',
+  ]) expect([cmd, decision(cmd), decidesPlan(cmd)]).toEqual([cmd, 'plan', true])
+  expect(decision('gmod manage on')).toBe('managed')
+  expect(decision("sh -c 'gmod manage off'")).toBe('managed')
+  expect(decision('gmod manage status')).toBe(null)
 })
 
 test('merging a pull request by hand is caught; gmod pr --auto is not', () => {

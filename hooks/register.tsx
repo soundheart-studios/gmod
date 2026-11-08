@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { GmodJob, GmodPhase, GmodProposal, GmodStatus } from '../types'
-import { commitDirs, commitsAlone, decidesPlan, mergesPr, movesClaims, resolveDir, writesPlan, writesRecords } from './shell'
+import { commitDirs, commitsAlone, decision, mergesPr, movesClaims, resolveDir, writesPlan, writesRecords } from './shell'
 // @ts-ignore: plain JavaScript, shared with the gmod command (gmod signals)
 import { paneLine as paneLineJs, signalsFrom as signalsFromJs } from '../lib/signals.mjs'
 
@@ -18,8 +18,6 @@ const PANE = 'gmod'
 // A decision draft is read in a pane of its own, then hands back to PANE.
 const ADR_PANE = 'gmod-adr'
 const ADR_TITLE = 'gmod · decision'
-// The approve/reject/accept half of decidesPlan (hooks/shell.ts).
-const APPROVES = /\bgmod(?:\.mjs)?['"]?\s+(?:adr\s+)?(?:approve|reject|accept)\b/
 const status = atom({ plugin: 'gmod', key: 'status' } as const, null, { shape: 'status-3' })
 const allowPlan = atom({ plugin: 'gmod', key: 'allowPlan' } as const, false)
 const open = atom({ plugin: 'gmod', key: 'open' } as const, null)
@@ -338,13 +336,9 @@ export const register: Register = on => {
     const cmd = e.command
     if (movesClaims(cmd)) return { deny: 'gmod: claims change only through mcp__gmod__claim and mcp__gmod__release' }
     if (mergesPr(cmd)) return { deny: 'gmod: pull requests merge through the forge once their checks pass (gmod pr --auto for a job); merging by hand is the person\'s call' }
-    if (decidesPlan(cmd)) {
-      // decidesPlan also catches `gmod manage on|off`: what isn't approve,
-      // reject or accept is the managed-mode switch.
-      return APPROVES.test(cmd)
-        ? { deny: "gmod: approving or rejecting the plan is the person's decision: they do it in the gmod pane or with /gmod approve" }
-        : { deny: "gmod: switching managed mode is the person's decision: they make it with gmod manage on|off at their own prompt" }
-    }
+    const decides = decision(cmd)
+    if (decides === 'plan') return { deny: "gmod: approving or rejecting the plan is the person's decision: they do it in the gmod pane or with /gmod approve" }
+    if (decides === 'managed') return { deny: "gmod: switching managed mode is the person's decision: they make it with gmod manage on|off at their own prompt" }
     if (writesRecords(cmd)) return { deny: "gmod: gmod's own records change only through gmod" }
     if (writesPlan(cmd) && !(await read($, allowPlan))) {
       return { deny: 'gmod: .gmod/plan.json changes only through a proposal the person approves (mcp__gmod__propose_job), or after /gmod allow-plan' }

@@ -46,35 +46,86 @@ export function movesClaims(cmd: string): boolean {
 // A person's decisions: approving or rejecting the plan or an ADR, and
 // switching managed mode on or off (ADR 0001).
 export function decidesPlan(cmd: string): boolean {
-  return /\bgmod(?:\.mjs)?['"]?\s+(?:adr\s+)?(?:approve|reject|accept)\b/.test(cmd) || switchesManaged(cmd)
+  return decision(cmd) !== null
+}
+
+// Which of a person's decisions a command makes: 'plan' for gmod approve,
+// reject and adr accept|reject, 'managed' for gmod manage on|off, null for
+// none. Read word by word, so a quoted mention (grep, echo, a commit message)
+// is text, not a command; `gmod manage` and `gmod manage status` only read.
+// Text run through sh -c, eval, xargs, $(…) and the like is read too.
+export type Decision = 'plan' | 'managed'
+
+export function decision(cmd: string, depth = 0): Decision | null {
+  if (depth > 3) return null
+  let managed = false
+  for (const words of lists(cmd)) {
+    const d = decisionWords(words, depth)
+    if (d === 'plan') return 'plan'
+    if (d === 'managed') managed = true
+    // A shell reading its commands from a pipe (`echo … | sh`): what it runs
+    // can't be told from text, so a mention anywhere counts.
+    const { name, args } = simple(words)
+    if (SHELLS.includes(name) && !args.some(a => !a.startsWith('-') || /^-[a-zA-Z]*c/.test(a))) {
+      if (SAYS_PLAN.test(cmd)) return 'plan'
+      if (SAYS_MANAGED.test(cmd)) managed = true
+    }
+  }
+  return managed ? 'managed' : null
 }
 
 const GMOD = /^(?:gmod|gmod\.mjs)$/
 const LAUNCHERS = ['node', 'npx', 'bun', 'bunx', 'deno', 'tsx', 'pnpx']
+const SHELLS = ['sh', 'bash', 'zsh', 'dash', 'ksh']
+// What a command says once nothing tells it apart from text: a shell reading
+// its commands from a pipe.
+const SAYS_PLAN = /\bgmod(?:\.mjs)?['"]?\s+(?:adr\s+)?(?:approve|reject|accept)\b/
+const SAYS_MANAGED = /\bgmod(?:\.mjs)?['"]?\s+manage\s+['"]?(?:on|off)\b/
 
-// `gmod manage on|off`, read word by word so a quoted mention (grep, echo, a
-// commit message) is text, not a command; `gmod manage` and `gmod manage
-// status` only read. Text run through sh -c, eval and the like is read too.
-function switchesManaged(cmd: string, depth = 0): boolean {
-  return lists(cmd).some(words => switchWords(words, depth))
+function either(a: Decision | null, b: Decision | null): Decision | null {
+  return a === 'plan' || b === 'plan' ? 'plan' : (a ?? b)
 }
 
-function switchWords(words: string[], depth: number): boolean {
+function decisionWords(words: string[], depth: number): Decision | null {
+  // What $(…) and `…` run, wherever they sit.
+  let inside: Decision | null = null
+  for (const w of words)
+    for (const m of w.matchAll(/\$\(([\s\S]*)\)|`([^`]*)`/g)) inside = either(inside, decision(m[1] ?? m[2] ?? '', depth + 1))
+  return either(inside, commandDecision(words, depth))
+}
+
+function commandDecision(words: string[], depth: number): Decision | null {
   const { name, args } = simple(words)
   if (RUNNERS.includes(name)) {
-    if (depth > 3) return false
+    if (depth > 3) return null
     const rest = args.filter(a => !a.startsWith('-'))
-    return rest.some(a => switchesManaged(a, depth + 1)) || switchWords(rest, depth + 1)
+    if (name === 'eval' || name === 'watch') return decision(rest.join(' '), depth + 1)
+    if (SHELLS.includes(name)) {
+      // sh -c 'text': the text is the command; a heredoc's body is too.
+      const c = args.findIndex(a => /^-[a-zA-Z]*c[a-zA-Z]*$/.test(a))
+      if (c >= 0) {
+        const text = args.slice(c + 1).find(a => !a.startsWith('-'))
+        return text === undefined ? null : decision(text, depth + 1)
+      }
+      const doc = args.find(a => a.startsWith('<<'))
+      if (doc !== undefined) return decision(doc.replace(/^<<\S*/, ''), depth + 1)
+      return null
+    }
+    // xargs, parallel, source: the words that follow are the command.
+    return commandDecision(rest, depth + 1)
   }
   let rest: string[]
   if (GMOD.test(name)) rest = args
   else if (LAUNCHERS.includes(name)) {
     const at = args.findIndex(a => GMOD.test(a.replace(/^.*\//, '')))
-    if (at < 0 || args.slice(0, at).some(a => !a.startsWith('-'))) return false
+    if (at < 0 || args.slice(0, at).some(a => !a.startsWith('-'))) return null
     rest = args.slice(at + 1)
-  } else return false
+  } else return null
   const [sub, how] = rest.filter(a => !a.startsWith('-'))
-  return sub === 'manage' && (how === 'on' || how === 'off')
+  if (sub === 'approve' || sub === 'reject') return 'plan'
+  if (sub === 'adr' && (how === 'accept' || how === 'reject')) return 'plan'
+  if (sub === 'manage' && (how === 'on' || how === 'off')) return 'managed'
+  return null
 }
 
 // The words of a command, list by list: quotes and escapes respected, so a
