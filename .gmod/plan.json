@@ -22,7 +22,8 @@
     "managed-gate": "node --test test/managed-gate.test.mjs",
     "review": "node --test test/review.test.mjs",
     "ci-pin": "grep -q 'uses: soundheart-studios/gmod@v1.6.0' .github/workflows/gmod.yml",
-    "fast-read": "node --test test/fast-read.test.mjs"
+    "fast-read": "node --test test/fast-read.test.mjs",
+    "ci-pin-1-6-1": "grep -q 'uses: soundheart-studios/gmod@v1.6.1' .github/workflows/gmod.yml"
   },
   "jobs": [
     {
@@ -672,6 +673,25 @@
         {
           "text": "package.json, package-lock.json and plugin.json all say 1.6.1, and CHANGELOG.md has a 1.6.1 entry",
           "check": "release"
+        }
+      ]
+    },
+    {
+      "id": "ci-gmod-1-6-1",
+      "phase": "upkeep",
+      "goal": "CI runs gmod 1.6.1 instead of 1.6.0",
+      "files": [
+        ".github/workflows/gmod.yml"
+      ],
+      "tests": [],
+      "after": [
+        "release-1-6-1"
+      ],
+      "brief": "Change `uses: soundheart-studios/gmod@v1.6.0` to `@v1.6.1` in .github/workflows/gmod.yml (line 16), nothing else. Brings the faster state/signals/status reads (#44) into CI. It lands as a CI change made by a job (CI files only).",
+      "done_when": [
+        {
+          "text": "the gmod workflow uses soundheart-studios/gmod@v1.6.1",
+          "check": "ci-pin-1-6-1"
         }
       ]
     }
