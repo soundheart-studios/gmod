@@ -356,7 +356,8 @@
       "after": [
         "npm-test-all",
         "bash-hook-no-rewrite",
-        "approve-anywhere"
+        "approve-anywhere",
+        "agent-hook-no-rewrite"
       ]
     },
     {
@@ -414,6 +415,31 @@
         {
           "text": "adr accept on a job's branch works the same way",
           "check": "adr-branch"
+        }
+      ]
+    },
+    {
+      "id": "agent-hook-no-rewrite",
+      "phase": "fixes",
+      "goal": "Subagent prompts are never changed by gmod's hook",
+      "after": [
+        "bash-hook-no-rewrite"
+      ],
+      "files": [
+        "hooks/register.tsx"
+      ],
+      "tests": [
+        "test/mod.test.tsx"
+      ],
+      "brief": "hooks/register.tsx ~line 336: in a governed repository, an Agent call whose prompt lacks FOR_SUBAGENTS gets it appended (next({ ...e, prompt: e.prompt + FOR_SUBAGENTS })). Auto mode reviewed the original prompt, sees a changed one and gives no verdict, so the call has to be sent again. Instead, deny such a call with a message that says the subagent needs gmod's routine and quotes FOR_SUBAGENTS to add to the prompt verbatim; a prompt that already carries it passes unchanged, as today. Ungoverned repositories: unchanged. With this and bash-hook-no-rewrite, no gmod hook changes a tool call's input. Not in scope: the routine's wording.",
+      "done_when": [
+        {
+          "text": "in a governed repository, an Agent prompt without the routine is refused with the routine to add, and nothing runs",
+          "check": "mod"
+        },
+        {
+          "text": "a prompt that carries the routine, or any Agent call in an ungoverned repository, runs exactly as written",
+          "check": "mod"
         }
       ]
     }
