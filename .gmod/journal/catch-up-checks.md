@@ -1,0 +1,5 @@
+# catch-up-checks: Branches gmod catches up get checked without a person
+
+- 2026-11-08T05:57:31.368Z check: red (a catch-up dispatches a gate run for the branch instead of relying on the bot push; a branch is not checked twice for the same commit)
+- 2026-11-08T06:00:06.369Z check: green
+- 2026-11-08T06:00:13.469Z dev@soundheart.io: after-merge already dispatched {check: n} after a catch-up with CI's token; skiff's runs show the held pull_request runs (actor github-actions[bot]) being approved by hand on top (run 42437597706, attempt 2), i.e. checked twice. Now after-merge waits for the new head, skips if its gate already reported, marks gate pending, then dispatches {check, head}. ci/action.mjs is unchanged: it ignores the extra head field. The held run itself can't be avoided from after-merge (only a person's token or the App avoids it); it needs no approval since the dispatch reports the required statuses. lib/app.mjs needed no change: with the App, GMOD_FORGE_TOKEN is set and no dispatch is sent.
