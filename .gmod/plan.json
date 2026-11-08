@@ -380,6 +380,10 @@
         {
           "text": "git commit and git -C <dir> commit run the commit gate in the hook for that dir: a refusal denies the call, a pass runs the command unchanged",
           "check": "mod"
+        },
+        {
+          "text": "a command that runs git commit and also anything but cd and git (an edit, eval, a function) is refused, so what is committed is what the gate saw",
+          "check": "mod"
         }
       ]
     },
