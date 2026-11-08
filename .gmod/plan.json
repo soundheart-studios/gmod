@@ -866,11 +866,12 @@
       "id": "shared-adr-drafts",
       "phase": "surfaces",
       "goal": "Every clone sees the same ADR drafts",
-      "brief": "Move ADR drafts from <git-common-dir>/gmod/adr-drafts.json to one ref per draft, refs/gmod/adr-drafts/<slug>, using lib/shared.mjs. One ref each, so drafts never contend. Accept and reject delete the ref locally and on origin. Reads fetch refs/gmod/adr-drafts/* in the same fetch as claims. An existing adr-drafts.json from 1.6 is migrated on first read. lib/receive.mjs lets these refs move.",
+      "brief": "Move ADR drafts from <git-common-dir>/gmod/adr-drafts.json to one ref per draft, refs/gmod/adr-drafts/<slug>, using lib/shared.mjs. One ref each, so drafts never contend. Accept and reject delete the ref locally and on origin. Reads fetch refs/gmod/adr-drafts/* in the same fetch as claims and the proposal: that fetch lives in syncClaims in lib/core.mjs (SHARED_NAMES), so core gains the adr-drafts refspec and reconciles each draft ref. An existing adr-drafts.json from 1.6 is migrated on first read. lib/receive.mjs lets these refs move (it already passes every ref outside refs/gmod/claims/).",
       "files": [
         "lib/adr.mjs",
         "lib/shared.mjs",
-        "lib/receive.mjs"
+        "lib/receive.mjs",
+        "lib/core.mjs"
       ],
       "tests": [
         "test/shared-adr-drafts.test.mjs"
