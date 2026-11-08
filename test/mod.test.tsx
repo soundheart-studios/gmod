@@ -71,15 +71,32 @@ test('an edit outside the claimed job is refused with the reason', async ($, on)
   expect(inside.deny).toBeUndefined()
 })
 
-test('a commit runs behind the gate, in the shell that commits', async ($, on) => {
+test('a commit is gated by the hook, for the worktree it commits in, and runs as written', async ($, on) => {
   const seen = engine(on, () => ({ exitCode: 0, stdout: STATUS }))
-  await $.tool.call({ tool: 'Bash', command: 'cd ../wt && git add -A && git commit -m "add-sum: x"' })
-  const ran = String(seen.calls.at(-1)?.command)
-  expect(ran).toContain('gate-commit --shell --dir "$_gd" || return 1')
-  expect(ran).toContain('[ "$_gp" = -C ] && _gd="$_ga"')
-  expect(ran.endsWith('cd ../wt && git add -A && git commit -m "add-sum: x"')).toBe(true)
-  await $.tool.call({ tool: 'Bash', command: 'ls' })
-  expect(seen.calls.at(-1)?.command).toBe('ls')
+  const cmd = 'cd ../wt && git add -A && git commit -m "add-sum: x"'
+  const out = await $.tool.call({ tool: 'Bash', command: cmd })
+  expect(out.deny).toBeUndefined()
+  expect(seen.calls.at(-1)?.command).toBe(cmd)
+  const gate = seen.runs.filter(r => r.args[0] === 'gate-commit')
+  expect(gate.length).toBe(1)
+  expect(gate[0]?.args).toEqual(['gate-commit', '--shell', '--dir', '/wt'])
+})
+
+test('a commit the gate refuses never reaches the shell', async ($, on) => {
+  const seen = engine(on, args => (args[0] === 'gate-commit' ? { exitCode: 1, stdout: '', stderr: 'gmod refused the commit: add-sum: the last check failed' } : { exitCode: 0, stdout: STATUS }))
+  const out = await $.tool.call({ tool: 'Bash', command: 'git -C /repo-wt commit -m x' })
+  expect(out.deny).toContain('the last check failed')
+  expect(seen.runs.find(r => r.args[0] === 'gate-commit')?.args).toEqual(['gate-commit', '--shell', '--dir', '/repo-wt'])
+  expect(seen.calls.some(c => c.tool === 'Bash')).toBe(false)
+})
+
+test('a command that only mentions commit runs exactly as written, ungated', async ($, on) => {
+  const seen = engine(on, () => ({ exitCode: 0, stdout: STATUS }))
+  for (const cmd of ['grep -n commit hooks/register.tsx', 'git log --oneline -S "bcommit"', 'ls']) {
+    await $.tool.call({ tool: 'Bash', command: cmd })
+    expect(seen.calls.at(-1)?.command).toBe(cmd)
+  }
+  expect(seen.runs.some(r => r.args[0] === 'gate-commit')).toBe(false)
 })
 
 test('an edit is judged by the repository the file is in', async ($, on) => {
