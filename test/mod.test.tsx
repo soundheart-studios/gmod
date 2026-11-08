@@ -138,31 +138,42 @@ test('a subagent in a worktree works with its own folder', async ($, on) => {
   expect(seen.runs.find(r => r.args[0] === 'claim')?.cwd).toBe('/repo-wt')
 })
 
-test('a subagent is told the routine when the repository is governed', async ($, on) => {
-  const seen = engine(on, () => ({ exitCode: 0, stdout: STATUS }))
+async function governed($: Engine, on: On, status = STATUS): Promise<Seen> {
+  const seen = engine(on, () => ({ exitCode: 0, stdout: status }))
   on('command.register', () => ({ value: { command: 'gmod' } }))
   on('tool.register', (_, e) => ({ value: { tool: `mcp__gmod__${e.name}` } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
-  await $.tool.call({ tool: 'Agent', description: 'work docs', prompt: 'Do the docs job.', subagent_type: 'general-purpose' })
-  const prompt = String(seen.calls.at(-1)?.prompt)
-  expect(prompt.startsWith('Do the docs job.')).toBe(true)
-  expect(prompt).toContain('pass its path as "dir"')
+  return seen
+}
+
+const agents = (seen: Seen) => seen.calls.filter(c => c.tool === 'Agent')
+
+test('a subagent prompt without the routine is refused with the routine to add, and nothing runs', async ($, on) => {
+  const seen = await governed($, on)
+  const out = await $.tool.call({ tool: 'Agent', description: 'work docs', prompt: 'Do the docs job.', subagent_type: 'general-purpose' })
+  expect(out.deny).toContain('is governed by gmod')
+  expect(out.deny).toContain('pass its path as "dir"')
+  expect(agents(seen).length).toBe(0)
 })
 
-test('a prompt that already carries the routine passes unchanged, so auto mode reviews what runs', async ($, on) => {
-  const seen = engine(on, () => ({ exitCode: 0, stdout: STATUS }))
-  on('command.register', () => ({ value: { command: 'gmod' } }))
-  on('tool.register', (_, e) => ({ value: { tool: `mcp__gmod__${e.name}` } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('session.start', (_, e) => ({ cwd: e.cwd }))
-  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+test('a prompt that carries the routine runs exactly as written, so auto mode reviews what runs', async ($, on) => {
+  const seen = await governed($, on)
+  const out = await $.tool.call({ tool: 'Agent', description: 'work docs', prompt: 'Do the docs job.', subagent_type: 'general-purpose' })
+  const routine = String(out.deny).match(/(This repository's work is governed by gmod[\s\S]*)$/)?.[1] ?? ''
+  expect(routine.length).toBeGreaterThan(0)
+  const prompt = `Do the docs job.\n\n---\n${routine}`
+  await $.tool.call({ tool: 'Agent', description: 'work docs', prompt, subagent_type: 'general-purpose' })
+  expect(agents(seen).length).toBe(1)
+  expect(agents(seen)[0]?.prompt).toBe(prompt)
+})
+
+test('in a repository gmod does not govern, a subagent runs exactly as written', async ($, on) => {
+  const seen = await governed($, on, JSON.stringify({ governed: false }))
   await $.tool.call({ tool: 'Agent', description: 'work docs', prompt: 'Do the docs job.', subagent_type: 'general-purpose' })
-  const once = String(seen.calls.at(-1)?.prompt)
-  await $.tool.call({ tool: 'Agent', description: 'work docs', prompt: once, subagent_type: 'general-purpose' })
-  expect(String(seen.calls.at(-1)?.prompt)).toBe(once)
-  expect(once.split('is governed by gmod').length).toBe(2)
+  expect(agents(seen).length).toBe(1)
+  expect(agents(seen)[0]?.prompt).toBe('Do the docs job.')
 })
 
 test('the agent cannot move claims or rewrite the plan through the shell', async ($, on) => {
