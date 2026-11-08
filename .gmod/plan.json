@@ -18,7 +18,8 @@
     "mod": "npx -y @anthropic-ai/claude-code plugin test .",
     "approve-branch": "node --test --test-name-pattern=\"approve on a job's branch\" test/approve-anywhere.test.mjs",
     "approve-main": "node --test --test-name-pattern=\"approve on main\" test/approve-anywhere.test.mjs",
-    "adr-branch": "node --test --test-name-pattern=\"adr accept on a job's branch\" test/approve-anywhere.test.mjs"
+    "adr-branch": "node --test --test-name-pattern=\"adr accept on a job's branch\" test/approve-anywhere.test.mjs",
+    "managed-gate": "node --test test/managed-gate.test.mjs"
   },
   "jobs": [
     {
@@ -468,6 +469,56 @@
           "check": "mod"
         }
       ]
+    },
+    {
+      "id": "managed-gate",
+      "phase": "managed-guard",
+      "goal": "The gate lands a managed switch like a plan change",
+      "files": [
+        "lib/core.mjs",
+        "test/managed-gate.test.mjs"
+      ],
+      "tests": [
+        "test/managed-gate.test.mjs"
+      ],
+      "brief": "gmod manage on|off commits .gmod/managed.json alone on a gmod/managed-<on|off>-<sha> branch (lib/managed.mjs, PR #32), but core.verify has no case for it: it reads the branch as a job named managed-on-<sha> and refuses it. Teach verify to judge a pull request that changes only .gmod/managed.json as a person's decision, the way it judges a plan or ADR change: it travels alone (mixed with any other file it is refused), and it gets the governance review. Don't change how plan, ADR, CI or job pull requests are judged.",
+      "done_when": [
+        {
+          "text": "a pull request changing only .gmod/managed.json passes the gate as a decision",
+          "check": "managed-gate"
+        },
+        {
+          "text": "a pull request mixing .gmod/managed.json with any other file is refused",
+          "check": "managed-gate"
+        },
+        {
+          "text": "the whole suite passes",
+          "check": "suite"
+        }
+      ]
+    },
+    {
+      "id": "managed-hook",
+      "phase": "managed-guard",
+      "goal": "An agent's shell cannot run gmod manage on or off",
+      "files": [
+        "hooks/shell.ts",
+        "test/shell.test.ts"
+      ],
+      "tests": [
+        "test/shell.test.ts"
+      ],
+      "brief": "decidesPlan in hooks/shell.ts refuses an agent running gmod approve/reject/adr accept from its shell, but not gmod manage on|off, and an agent at the keyboard commits as the person, so lib/managed.mjs's identity check can't catch it. Extend decidesPlan to match gmod manage on and gmod manage off; plain gmod manage and gmod manage status (read-only) must still run.",
+      "done_when": [
+        {
+          "text": "gmod manage on and gmod manage off from an agent's shell are refused",
+          "check": "mod"
+        },
+        {
+          "text": "gmod manage and gmod manage status still run",
+          "check": "mod"
+        }
+      ]
     }
   ],
   "phases": [
@@ -490,6 +541,14 @@
       "outcome": "A repository can opt into managed features (for faces like Skiff) with one switch; without it, gmod behaves exactly as before.",
       "after": [
         "contract"
+      ]
+    },
+    {
+      "id": "managed-guard",
+      "title": "Managed guard",
+      "outcome": "Only a person can switch managed mode, and the switch's own pull request lands through the gate.",
+      "after": [
+        "managed"
       ]
     }
   ]
