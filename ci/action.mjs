@@ -337,14 +337,51 @@ async function mention() {
   return fix(issue.number, body.replace(/(^|\s)@gmod\b/, '$1').trim());
 }
 
+// Has another run already gated this head, or is one gating it? On GitHub,
+// CI's own push (a catch-up) starts a pull_request run that is held for
+// approval while gmod gates the head with a dispatch; approved later, that
+// run would gate, review and land the same commit again. Any gate status on
+// the head counts, pending included, except:
+//   - one this very run reported (a person re-running it: same run id), and
+//   - after-merge's marker (pending, no run behind it yet) when this run is
+//     the dispatch it was set for ({check, head} naming this head).
+// Gitea holds no runs, so it is gated as before.
+async function gatedElsewhere(sha, dispatchedHead) {
+  if (gitea) return null;
+  const r = await gh('GET', `/commits/${sha}/status`);
+  if (!r.ok) return null;
+  const runId = process.env.GITHUB_RUN_ID;
+  for (const s of r.json?.statuses ?? []) {
+    if (s.context !== CONTEXT.gate) continue;
+    const run = s.target_url?.match(/\/actions\/runs\/(\d+)/)?.[1];
+    if (run && run === runId) continue;
+    if (!s.target_url && (s.state ?? s.status) === 'pending' && dispatchedHead === sha) continue;
+    return s;
+  }
+  return null;
+}
+
+function summary(line) {
+  console.log(`gmod: ${line}`);
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    try { appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${line}\n`); } catch {}
+  }
+}
+
 // Gate, review, and land one pull request, as checked out at its head.
-async function checkAndLand(pr) {
+async function checkAndLand(pr, dispatchedHead) {
   if (pr.head.repo?.full_name !== repo) {
     console.log('gmod: a pull request from a fork gets no secrets; nothing to check with');
     return 0;
   }
   if (pr.state !== 'open') return 0;
   const sha = pr.head.sha;
+  const before = await gatedElsewhere(sha, dispatchedHead);
+  if (before) {
+    const state = before.state ?? before.status;
+    summary(`#${pr.number} at ${sha.slice(0, 10)} is already ${state === 'pending' ? 'being checked' : `checked (gate ${state})`} by another run${before.target_url ? ` (${before.target_url})` : ''}; this run skips gate, review and landing.`);
+    return 0;
+  }
   const common = ['--base', pr.base.sha, '--head', 'HEAD', '--branch', pr.head.ref, '--title', pr.title];
 
   await status(sha, CONTEXT.gate, 'pending', 'proving the change');
@@ -460,7 +497,7 @@ if (event === 'repository_dispatch' && payload.action === 'gmod') {
       console.log(`gmod: couldn't check out #${pr.number}`);
       process.exit(1);
     }
-    process.exit(await checkAndLand(pr));
+    process.exit(await checkAndLand(pr, p.head));
   }
 }
 
