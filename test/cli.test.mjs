@@ -449,6 +449,7 @@ test('a plan can start from nothing', () => {
   try {
     sh(top, 'git', ['init', '-q', '-b', 'main']);
     sh(top, 'git', ['config', 'user.email', 'o@x.io']);
+    sh(top, 'git', ['config', 'user.name', 'O']);
     sh(top, 'git', ['commit', '-q', '--allow-empty', '-m', 'start']);
     const job = { id: 'hello', goal: 'Say hello', files: ['hello.sh'], done_when: [{ text: 'it says hello', check: 'hi' }] };
     assert.equal(gmod(top, 'propose-job', JSON.stringify(job), '--checks', '{"hi":"sh hello.sh | grep -q hello"}').code, 0);
