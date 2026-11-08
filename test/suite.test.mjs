@@ -18,3 +18,9 @@ test("npm test's script covers every test/*.test.mjs", () => {
   const missing = files.filter(f => !words.some(m => m.test(f)));
   assert.deepEqual(missing, [], `npm test leaves out: ${missing.join(', ')}`);
 });
+
+// The gate runs npm test with the reviewer's key in its environment; the
+// live tests (a real model, paid, not deterministic) stay opt-in.
+test('npm test runs the live tests only when asked', () => {
+  for (const name of ['ANTHROPIC_API_KEY', 'GMOD_REVIEW_URL']) assert.match(script, new RegExp(`(^|\\s)${name}=(\\s|$)`), `npm test should clear ${name}`);
+});
