@@ -2,6 +2,12 @@
 
 What each gmod release changes for you, with the details underneath.
 
+## 1.6.2 — 2026-11-08
+
+`gmod manage on` and `gmod manage off` open their pull request again.
+
+- **Switching managed mode lands by itself.** Before, `gmod manage on|off` committed and pushed the switch, then refused to open its pull request, asking for a job's commit that a switch never has. Now its pull request is titled by its commit (`managed: on`), like an approved plan, and the gate and review handle it as before. (#50)
+
 ## 1.6.1 — 2026-11-08
 
 Reading gmod is much faster in a busy repository, and what it prints is unchanged.
