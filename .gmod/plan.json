@@ -714,6 +714,31 @@
           "check": "ci-tests"
         }
       ]
+    },
+    {
+      "id": "release-1-6-2",
+      "phase": "upkeep",
+      "goal": "Release gmod 1.6.2 with the managed-switch PR fix",
+      "files": [
+        "package.json",
+        "package-lock.json",
+        ".claude-plugin/plugin.json",
+        "CHANGELOG.md",
+        "test/release.test.mjs"
+      ],
+      "tests": [
+        "test/release.test.mjs"
+      ],
+      "after": [
+        "manage-pr"
+      ],
+      "brief": "Bump to 1.6.2 as release-1-6-1 did: `npm version 1.6.2 --no-git-tag-version`, plugin.json by hand, test/release.test.mjs at 1.6.2 (at least one bullet). CHANGELOG.md 1.6.2 entry above 1.6.1, plain English first: `gmod manage on` and `off` open their pull request again; before, they committed and pushed the switch but refused to open the PR, asking for a job commit that a switch never has (#50). After landing, tag v1.6.2, publish the GitHub release, and move the global pin and the CI uses: lines.",
+      "done_when": [
+        {
+          "text": "package.json, package-lock.json and plugin.json all say 1.6.2, and CHANGELOG.md has a 1.6.2 entry",
+          "check": "release"
+        }
+      ]
     }
   ],
   "phases": [
