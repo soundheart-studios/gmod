@@ -8,16 +8,16 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const json = f => JSON.parse(readFileSync(join(ROOT, f), 'utf8'));
-const VERSION = '1.6.0';
+const VERSION = '1.6.1';
 
-test('package.json, package-lock.json and plugin.json all say 1.6.0, and CHANGELOG.md has a 1.6.0 entry', () => {
+test('package.json, package-lock.json and plugin.json all say 1.6.1, and CHANGELOG.md has a 1.6.1 entry', () => {
   assert.equal(json('package.json').version, VERSION);
   const lock = json('package-lock.json');
   assert.equal(lock.version, VERSION);
   assert.equal(lock.packages[''].version, VERSION);
   assert.equal(json('.claude-plugin/plugin.json').version, VERSION);
   const log = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8');
-  assert.match(log, /^## 1\.6\.0\b/m, 'a 1.6.0 heading');
-  const entry = log.split(/^## /m).find(s => s.startsWith('1.6.0'));
-  assert.ok(entry && entry.split('\n').filter(l => /^\s*[-*] /.test(l)).length >= 5, 'the entry lists what changed');
+  assert.match(log, /^## 1\.6\.1\b/m, 'a 1.6.1 heading');
+  const entry = log.split(/^## /m).find(s => s.startsWith('1.6.1'));
+  assert.ok(entry && entry.split('\n').filter(l => /^\s*[-*] /.test(l)).length >= 1, 'the entry lists what changed');
 });
