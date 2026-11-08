@@ -1,0 +1,8 @@
+# doctor-catch-up-path: doctor says how caught-up branches get checked
+
+- 2026-11-08T06:45:59.223Z dev@soundheart.io: Plan: replace doctor's repository_dispatch finding with one catch-up finding: app-id/app-key inputs in the workflow → GitHub App path; else repository_dispatch: ... gmod → dispatch path; else ✗ with fix gmod setup. Message avoids the word "runner" so setup-runs-on's runnerFinding (/runner/) still finds only the runner finding.
+- 2026-11-08T06:59:09.932Z check: red (doctor names the GitHub App path when the workflow has app keys; doctor names repository_dispatch otherwise, and flags a workflow with neither)
+- 2026-11-08T06:59:24.984Z check: red (doctor names the GitHub App path when the workflow has app keys; doctor names repository_dispatch otherwise, and flags a workflow with neither)
+- 2026-11-08T07:17:11.062Z check: green
+- 2026-11-08T07:19:26.556Z dev@soundheart.io: Done: doctor's old "follow-up runs" finding is replaced by one catch-up finding. If the workflow has both app-id: and app-key: inputs, it reports the GitHub App path. Otherwise, if it has repository_dispatch: ... gmod, it reports the repository_dispatch path. Otherwise it is a ✗ with fix gmod setup. Gitea and GitLab doctors are unchanged. The first green attempt failed because my test's matcher didn't match "catches up"; I fixed the matcher, not the criteria. Fast-forwarded onto origin/main (skip-gated-head landed; no overlapping files). On that base: npm test 90/90, test/setup-runs-on.test.mjs 4/4 (the message avoids "runner"). test/doctor-catch-up.test.mjs isn't in npm test's list yet; npm-test-all adds it.
+- 2026-11-08T07:19:32.198Z check: green
