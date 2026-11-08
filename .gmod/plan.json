@@ -15,7 +15,10 @@
     "doctor-catch-up": "node --test test/doctor-catch-up.test.mjs",
     "suite-list": "node --test test/suite.test.mjs",
     "release": "node --test test/release.test.mjs",
-    "mod": "npx -y @anthropic-ai/claude-code plugin test ."
+    "mod": "npx -y @anthropic-ai/claude-code plugin test .",
+    "approve-branch": "node --test --test-name-pattern=\"approve on a job's branch\" test/approve-anywhere.test.mjs",
+    "approve-main": "node --test --test-name-pattern=\"approve on main\" test/approve-anywhere.test.mjs",
+    "adr-branch": "node --test --test-name-pattern=\"adr accept on a job's branch\" test/approve-anywhere.test.mjs"
   },
   "jobs": [
     {
@@ -352,7 +355,8 @@
       ],
       "after": [
         "npm-test-all",
-        "bash-hook-no-rewrite"
+        "bash-hook-no-rewrite",
+        "approve-anywhere"
       ]
     },
     {
@@ -376,6 +380,35 @@
         {
           "text": "git commit and git -C <dir> commit run the commit gate in the hook for that dir: a refusal denies the call, a pass runs the command unchanged",
           "check": "mod"
+        }
+      ]
+    },
+    {
+      "id": "approve-anywhere",
+      "phase": "fixes",
+      "goal": "Approving works from any branch, even a job's",
+      "files": [
+        "lib/core.mjs",
+        "lib/adr.mjs",
+        "lib/ci.mjs",
+        "bin/gmod.mjs"
+      ],
+      "tests": [
+        "test/approve-anywhere.test.mjs"
+      ],
+      "brief": "approve (lib/core.mjs:1186) writes .gmod/plan.json and commits it on the checked-out branch, so it refuses a gmod/ job branch (line 1191); adr accept does the same (lib/adr.mjs:145). A person approving from a session that is working a job (its folder on gmod/<job>, or a job worktree) is refused every time. Instead, build the decision commit off the checkout: on main's tip (local main, or origin/main when that is ahead), with a temporary index (read-tree, hash-object, update-index, write-tree, commit-tree), and hand that commit to publishDecision (lib/ci.mjs:591), which today pushes HEAD, so it pushes the given commit as gmod/plan-<sha> / the decision branch. The proposal's base is checked against the plan in that main commit, not the job branch's copy. The checkout, its index and its branch are never touched; when the checkout is on main itself, it still moves to the new commit as today. Not in scope: the pane's wording, and plan branches other than main.",
+      "done_when": [
+        {
+          "text": "approve on a job's branch commits the plan on main's tip, publishes it, and leaves the checkout, index and branch as they were",
+          "check": "approve-branch"
+        },
+        {
+          "text": "approve on main behaves as before",
+          "check": "approve-main"
+        },
+        {
+          "text": "adr accept on a job's branch works the same way",
+          "check": "adr-branch"
         }
       ]
     }
