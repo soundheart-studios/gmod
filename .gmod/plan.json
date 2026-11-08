@@ -19,7 +19,8 @@
     "approve-branch": "node --test --test-name-pattern=\"approve on a job's branch\" test/approve-anywhere.test.mjs",
     "approve-main": "node --test --test-name-pattern=\"approve on main\" test/approve-anywhere.test.mjs",
     "adr-branch": "node --test --test-name-pattern=\"adr accept on a job's branch\" test/approve-anywhere.test.mjs",
-    "managed-gate": "node --test test/managed-gate.test.mjs"
+    "managed-gate": "node --test test/managed-gate.test.mjs",
+    "review": "node --test test/review.test.mjs"
   },
   "jobs": [
     {
@@ -517,6 +518,40 @@
         {
           "text": "gmod manage and gmod manage status still run",
           "check": "mod"
+        }
+      ]
+    },
+    {
+      "id": "managed-review",
+      "phase": "managed-guard",
+      "after": [
+        "managed-gate",
+        "managed-hook"
+      ],
+      "goal": "The reviewer reviews managed switches; the refusal names them",
+      "files": [
+        "ci/review.mjs",
+        "hooks/register.tsx",
+        "test/review.test.mjs",
+        "test/mod.test.tsx"
+      ],
+      "tests": [
+        "test/review.test.mjs",
+        "test/mod.test.tsx"
+      ],
+      "brief": "Two loose ends from managed-gate and managed-hook. (1) ci/review.mjs (~line 133) decides governance with f === core.PLAN || adr prefix || core.isCiFile(f), so a pull request changing only .gmod/managed.json gets 'skipped (no job named)': the gate passes it and nothing reviews it. Count core.MANAGED_SWITCH as governance too. (2) hooks/register.tsx (~line 339): when decidesPlan refuses gmod manage on|off, the agent is told 'approving or rejecting the plan is the person's decision'; name managed mode for those commands (shell.ts exports switchesManaged). Approve/reject wording stays as is.",
+      "done_when": [
+        {
+          "text": "a pull request changing only .gmod/managed.json gets the governance review",
+          "check": "review"
+        },
+        {
+          "text": "an agent refused gmod manage on|off is told it is the person's managed-mode decision",
+          "check": "mod"
+        },
+        {
+          "text": "the whole suite passes",
+          "check": "suite"
         }
       ]
     }
