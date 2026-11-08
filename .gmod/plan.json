@@ -301,12 +301,13 @@
       "id": "npm-test-all",
       "phase": "fixes",
       "goal": "npm test runs every test file",
-      "brief": "package.json's test script lists files by hand, so setup-runs-on, commit-files, pr-status, catch-up, ci-change-job (and future) tests never run in CI. Run every test/*.test.mjs (review-live skips itself without a key). Add test/suite.test.mjs asserting the script covers every test/*.test.mjs on disk.",
+      "brief": "package.json's test script lists files by hand, so setup-runs-on, commit-files, pr-status, catch-up, ci-change-job (and future) tests never run in CI. Run every test/*.test.mjs (review-live skips itself without a key). Add test/suite.test.mjs asserting the script covers every test/*.test.mjs on disk. test/cli.test.mjs: 'a plan can start from nothing' sets user.email but no user.name, so it fails on a runner with no global git identity (the gate's); give it a name.",
       "files": [
         "package.json"
       ],
       "tests": [
-        "test/suite.test.mjs"
+        "test/suite.test.mjs",
+        "test/cli.test.mjs"
       ],
       "done_when": [
         {
