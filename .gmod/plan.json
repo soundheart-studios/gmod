@@ -10,7 +10,11 @@
     "signals": "node --test test/signals.test.mjs",
     "capabilities": "node --test test/capabilities.test.mjs",
     "managed": "node --test test/managed.test.mjs",
-    "suite": "npm test"
+    "suite": "npm test",
+    "skip-gated": "node --test test/skip-gated.test.mjs",
+    "doctor-catch-up": "node --test test/doctor-catch-up.test.mjs",
+    "suite-list": "node --test test/suite.test.mjs",
+    "release": "node --test test/release.test.mjs"
   },
   "jobs": [
     {
@@ -115,7 +119,7 @@
       "id": "catch-up-checks",
       "phase": "fixes",
       "goal": "Branches gmod catches up get checked without a person",
-      "brief": "After a landing, CI merges main into open job branches as github-actions[bot]; GitHub then holds those pull_request runs as action_required, so they wait for a person. After a catch-up, start the gate through repository_dispatch (already in the workflow) for that branch, or push as the GitHub App when one is set, so no run needs approval. Doctor says which path is in use.",
+      "brief": "After a landing, CI merges main into open job branches as github-actions[bot]; GitHub then holds those pull_request runs as action_required, so they wait for a person. After a catch-up, start the gate through repository_dispatch (already in the workflow) for that branch, or push as the GitHub App when one is set, so no run needs approval. (doctor-catch-up-path reports which path is in use.)",
       "files": [
         "ci/after-merge.mjs",
         "lib/app.mjs"
@@ -240,6 +244,112 @@
       ],
       "after": [
         "capabilities-json"
+      ]
+    },
+    {
+      "id": "skip-gated-head",
+      "phase": "fixes",
+      "goal": "The gate runs once per pull request commit",
+      "brief": "When a held github-actions[bot] pull_request run (action_required) is approved after gmod already dispatched a gate run for the same head, the gate and review run twice. In ci/action.mjs, before gating a pull request, look up the head commit's statuses; if gmod/gate (the gate's context) already reported for that sha, skip gate, review and land for this run and say so in the summary. A new head commit is gated as usual.",
+      "files": [
+        "ci/action.mjs"
+      ],
+      "tests": [
+        "test/skip-gated.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "a head whose gmod/gate status already exists is not gated again",
+          "check": "skip-gated"
+        },
+        {
+          "text": "a head with no gate status is gated as before",
+          "check": "skip-gated"
+        }
+      ],
+      "after": [
+        "ci-change-job"
+      ]
+    },
+    {
+      "id": "doctor-catch-up-path",
+      "phase": "fixes",
+      "goal": "doctor says how caught-up branches get checked",
+      "brief": "In lib/setup.mjs doctor (GitHub): report which catch-up path is in use — the GitHub App (app-id/app-key in the workflow, so its pushes start runs) or repository_dispatch (the workflow takes gmod events) — and flag neither as ✗ with its fix (gmod setup). Gitea and GitLab are unchanged.",
+      "files": [
+        "lib/setup.mjs"
+      ],
+      "tests": [
+        "test/doctor-catch-up.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "doctor names the GitHub App path when the workflow has app keys",
+          "check": "doctor-catch-up"
+        },
+        {
+          "text": "doctor names repository_dispatch otherwise, and flags a workflow with neither",
+          "check": "doctor-catch-up"
+        }
+      ],
+      "after": [
+        "setup-runs-on",
+        "catch-up-checks"
+      ]
+    },
+    {
+      "id": "npm-test-all",
+      "phase": "fixes",
+      "goal": "npm test runs every test file",
+      "brief": "package.json's test script lists files by hand, so setup-runs-on, commit-files, pr-status, catch-up, ci-change-job (and future) tests never run in CI. Run every test/*.test.mjs (review-live skips itself without a key). Add test/suite.test.mjs asserting the script covers every test/*.test.mjs on disk.",
+      "files": [
+        "package.json"
+      ],
+      "tests": [
+        "test/suite.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "npm test's script covers every test/*.test.mjs",
+          "check": "suite-list"
+        },
+        {
+          "text": "the whole suite passes",
+          "check": "suite"
+        }
+      ],
+      "after": [
+        "setup-runs-on",
+        "commit-only-job-files",
+        "ci-change-job",
+        "pr-status-github",
+        "catch-up-checks",
+        "skip-gated-head",
+        "doctor-catch-up-path"
+      ]
+    },
+    {
+      "id": "release-1-5-0",
+      "phase": "fixes",
+      "goal": "Release gmod 1.5.0 so repos can upgrade",
+      "brief": "Bump package.json, package-lock.json and .claude-plugin/plugin.json to 1.5.0 and start CHANGELOG.md with a 1.5.0 entry listing the Fixes phase. Once it lands, the v1.5.0 tag is pushed on that commit (image.yml checks it matches package.json), which is what gmod ci upgrade looks for.",
+      "files": [
+        "package.json",
+        "package-lock.json",
+        ".claude-plugin/plugin.json",
+        "CHANGELOG.md"
+      ],
+      "tests": [
+        "test/release.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "package.json, package-lock.json and plugin.json all say 1.5.0, and CHANGELOG.md has a 1.5.0 entry",
+          "check": "release"
+        }
+      ],
+      "after": [
+        "npm-test-all"
       ]
     }
   ],
