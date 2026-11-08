@@ -7,6 +7,7 @@ import * as adr from '../lib/adr.mjs';
 import * as rcv from '../lib/receive.mjs';
 import * as setupLib from '../lib/setup.mjs';
 import * as runnerLib from '../lib/runner.mjs';
+import * as stateLib from '../lib/state.mjs';
 import { readFileSync as readSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -15,6 +16,7 @@ const HELP = `gmod: planned work with proof, on plain git
 
   gmod init                       write a starter .gmod/plan.json
   gmod plan                       every job and its state
+  gmod state [--no-sync]          the plan and its progress (--json: the record faces like Skiff read)
   gmod next                       the first job ready to take
   gmod claim <job>                take a job (a git ref on origin; first push wins)
   gmod release [job]              let a job go
@@ -282,6 +284,10 @@ async function main() {
         ? st.phases.map(ph => `${ph.title} · ${ph.done} of ${ph.total} done${ph.waiting.length ? ` · after ${ph.waiting.join(', ')}` : ''}\n  ${ph.outcome}\n${s.filter(j => ph.jobs.includes(j.id)).map(j => `  ${row(j).replace(/\n/g, '\n  ')}`).join('\n')}`).join('\n\n')
         : s.map(row).join('\n');
       return out(flags, { jobs: s, phases: st.phases, proposal: p }, body + (p ? `\n\nproposal by ${p.by}: ${p.summary} (gmod proposal)` : ''));
+    }
+    case 'state': {
+      const s = stateLib.state(root, { sync: !flags['no-sync'] });
+      return out(flags, s, stateLib.describe(s));
     }
     case 'next': {
       const plan = core.planFromDisk(root);
