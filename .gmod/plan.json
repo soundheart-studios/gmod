@@ -8,7 +8,9 @@
     "catch-up": "node --test test/catch-up.test.mjs",
     "state": "node --test test/state.test.mjs",
     "signals": "node --test test/signals.test.mjs",
-    "capabilities": "node --test test/capabilities.test.mjs"
+    "capabilities": "node --test test/capabilities.test.mjs",
+    "managed": "node --test test/managed.test.mjs",
+    "suite": "npm test"
   },
   "jobs": [
     {
@@ -52,6 +54,10 @@
         },
         {
           "text": "an untracked file outside the job is not committed",
+          "check": "commit-files"
+        },
+        {
+          "text": "a file deleted or renamed inside the job is still committed",
           "check": "commit-files"
         }
       ]
@@ -121,6 +127,10 @@
         {
           "text": "a catch-up dispatches a gate run for the branch instead of relying on the bot push",
           "check": "catch-up"
+        },
+        {
+          "text": "a branch is not checked twice for the same commit",
+          "check": "catch-up"
         }
       ]
     },
@@ -168,6 +178,10 @@
         {
           "text": "a resolved cause no longer gives its signal",
           "check": "signals"
+        },
+        {
+          "text": "the pane shows the same Needs-you items as before on recorded cases",
+          "check": "signals"
         }
       ],
       "after": [
@@ -178,7 +192,7 @@
       "id": "capabilities-json",
       "phase": "contract",
       "goal": "gmod capabilities --json says what this gmod speaks",
-      "brief": "DESIGN E2 and 6.5: {v:1, engine:\"gmod\", version, protocol:\"1.0\", enforcers:[...], presets?, inventory?}. Skiff refuses a protocol major it does not know; match ~/skiff/crates/skiff-host/tests/fixtures/gmod/v1/gmod.",
+      "brief": "DESIGN E2 and 6.5: {v:1, engine:\"gmod\", version, protocol:\"1.0\", enforcers:[...], managed: true|false (this gmod supports managed mode), presets?, inventory?}. A face uses it to know which managed features exist before offering them. Match ~/skiff/crates/skiff-host/tests/fixtures/gmod/v1/gmod.",
       "files": [
         "lib/capabilities.mjs",
         "bin/gmod.mjs"
@@ -195,6 +209,38 @@
       "after": [
         "signals-json"
       ]
+    },
+    {
+      "id": "managed-switch",
+      "phase": "managed",
+      "goal": "A per-repo switch for managed features, off by default",
+      "brief": "Managed mode is where face-driven features (voyages, requests, decide, packs) will live; this job adds only the switch. .gmod/managed.json {v:1, managed:true} written as a governance decision by `gmod manage on|off` (a person, never an agent; refused from an agent identity), read by `gmod manage status`. state --json reports managed:true|false. When off (the default, and when the file is absent) nothing in the plan format, pane, gate or commands changes: prove it by running the existing suite against a repo with the switch off. See the ADR on managed features.",
+      "files": [
+        "lib/managed.mjs",
+        "bin/gmod.mjs",
+        "lib/state.mjs",
+        "lib/capabilities.mjs"
+      ],
+      "tests": [
+        "test/managed.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "gmod manage on writes .gmod/managed.json as a decision and state --json says managed: true",
+          "check": "managed"
+        },
+        {
+          "text": "an agent identity is refused",
+          "check": "managed"
+        },
+        {
+          "text": "with the switch off, the existing test suite passes unchanged",
+          "check": "suite"
+        }
+      ],
+      "after": [
+        "capabilities-json"
+      ]
     }
   ],
   "phases": [
@@ -209,6 +255,14 @@
       "outcome": "A face like Skiff can read gmod's version, state and signals as JSON, without the pane.",
       "after": [
         "fixes"
+      ]
+    },
+    {
+      "id": "managed",
+      "title": "Managed mode",
+      "outcome": "A repository can opt into managed features (for faces like Skiff) with one switch; without it, gmod behaves exactly as before.",
+      "after": [
+        "contract"
       ]
     }
   ]
