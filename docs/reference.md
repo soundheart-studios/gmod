@@ -1,6 +1,6 @@
 # Reference: how gmod works inside
 
-The deep version, for when you want to know exactly what happens. Start with [how it works](how-it-works.md) for the short one; setting up CI is in [setup](setup.md).
+The deep version, for when you want to know exactly what happens. Start with [how it works](how-it-works.md) for the short one; setting up CI is in [setup](setup.md). What every surface that reads gmod (the pane, the CLI, CI, Skiff, Linear, other agents) can rely on is the [surfaces contract](surfaces.md).
 
 ## The parts
 
