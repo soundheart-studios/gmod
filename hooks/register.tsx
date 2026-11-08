@@ -3,6 +3,13 @@ import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { GmodJob, GmodPhase, GmodProposal, GmodStatus } from '../types'
 import { commitDirs, commitsAlone, decidesPlan, mergesPr, movesClaims, resolveDir, writesPlan, writesRecords } from './shell'
+// @ts-ignore: plain JavaScript, shared with the gmod command (gmod signals)
+import { paneLine as paneLineJs, signalsFrom as signalsFromJs } from '../lib/signals.mjs'
+
+// A signal: something that needs a person (lib/signals.mjs computes them).
+type Signal = { id: string; kind: 'decide' | 'unstick' | 'know'; question: string; detail?: string; cause: Record<string, unknown>; evidence: string[]; actions: string[] }
+const signalsFrom = signalsFromJs as (s: GmodStatus | null) => Signal[]
+const paneLine = paneLineJs as (s: Signal) => string | null
 
 // The mod is thin: every rule lives in the gmod command (bin/gmod.mjs), the
 // same one people run at a terminal and CI runs on pull requests.
@@ -459,7 +466,6 @@ export const register: Register = on => {
     const done = jobs.filter(j => j.state === 'done').length
     const moving = jobs.filter(j => j.state === 'claimed').length
     const waiting = jobs.filter(j => j.state === 'waiting').length
-    const stalled = jobs.filter(j => j.stalled)
     const opened = await read($, open)
     const isAsking = await read($, asking)
     const openInCard = await read($, cardOpen)
@@ -774,21 +780,32 @@ export const register: Register = on => {
       )
     }
 
-    const broken = jobs.filter(j => j.moved && ['conflicts', 'breaks'].includes(j.moved.level))
-    const adrDrafts = s.adrDrafts ?? []
-    const needs = Boolean(p) || stalled.length > 0 || broken.length > 0 || adrDrafts.length > 0
+    // What needs you: the same list `gmod signals` gives (lib/signals.mjs).
+    const signals = signalsFrom(s)
+    const needs = signals.length > 0
 
     // A decision draft is one line here; its card opens in the decision pane.
-    function adrLine(d: (typeof adrDrafts)[number]) {
+    function adrLine(sig: Signal, draft: string) {
       return (
-        <Box key={`adrline${d.draft}`} flexDirection="row" gap={2}>
+        <Box key={`adrline${draft}`} flexDirection="row" gap={2}>
           <Box flexShrink={1}>
-            <Text color="magenta" wrap="wrap">⚖ Decision waiting: {d.title}</Text>
+            <Text color="magenta" wrap="wrap">{paneLine(sig)}</Text>
           </Box>
-          <Button key={`adrreview${d.draft}`} plain onPress={() => $.ui.open({ id: ADR_PANE, title: ADR_TITLE, focus: true, closeOnEscape: true })}>
+          <Button key={`adrreview${draft}`} plain onPress={() => $.ui.open({ id: ADR_PANE, title: ADR_TITLE, focus: true, closeOnEscape: true })}>
             <Text color="cyan">Review ▸</Text>
           </Button>
         </Box>
+      )
+    }
+    function needLine(sig: Signal) {
+      const c = sig.cause
+      if (typeof c.proposal === 'string') return p ? card(p) : null
+      if (typeof c.adr === 'string') return adrLine(sig, c.adr)
+      const key = typeof c.stuck === 'string' ? `stall${c.stuck}` : `moved${String(c.moved)}`
+      return (
+        <Text key={key} color="red" wrap="wrap">
+          {paneLine(sig)}
+        </Text>
       )
     }
     return (
@@ -804,20 +821,7 @@ export const register: Register = on => {
         {needs && (
           <Box flexDirection="column" marginTop={1}>
             <Text bold color="cyan">Needs you</Text>
-            {p && card(p)}
-            {adrDrafts.map(d => adrLine(d))}
-            {stalled.map(j => (
-              <Text key={`stall${j.id}`} color="red" wrap="wrap">! {j.id} is red{j.where && j.where !== 'here' ? ` in ${j.where}` : ''}: its criteria still fail</Text>
-            ))}
-            {broken.map(j => (
-              <Text key={`moved${j.id}`} color="red" wrap="wrap">
-                ! {j.id}
-                {j.moved!.level === 'breaks'
-                  ? ` fails on today's main: ${j.moved!.landed.join(', ') || 'main'} changed ${(j.moved!.touched.length ? j.moved!.touched : j.moved!.changed).slice(0, 3).join(', ')}`
-                  : ` conflicts with main in ${j.moved!.conflicts.join(', ')}`}
-                {j.where && j.where !== 'here' ? ` (${j.where})` : ''}: rebase onto main
-              </Text>
-            ))}
+            {signals.map(sig => needLine(sig))}
           </Box>
         )}
 
