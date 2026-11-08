@@ -21,7 +21,8 @@
     "adr-branch": "node --test --test-name-pattern=\"adr accept on a job's branch\" test/approve-anywhere.test.mjs",
     "managed-gate": "node --test test/managed-gate.test.mjs",
     "review": "node --test test/review.test.mjs",
-    "ci-pin": "grep -q 'uses: soundheart-studios/gmod@v1.6.0' .github/workflows/gmod.yml"
+    "ci-pin": "grep -q 'uses: soundheart-studios/gmod@v1.6.0' .github/workflows/gmod.yml",
+    "fast-read": "node --test test/fast-read.test.mjs"
   },
   "jobs": [
     {
@@ -620,6 +621,32 @@
         {
           "text": "gmod approve, gmod reject and gmod adr accept run from an agent's shell are still refused, with the same words",
           "check": "mod"
+        }
+      ]
+    },
+    {
+      "id": "fast-read",
+      "phase": "upkeep",
+      "goal": "Reading gmod stays fast with many worktrees",
+      "brief": "board() in lib/core.mjs visits every git worktree. Each leftover worktree of a job that already landed still costs about 8 git calls (proof, git log main..HEAD, merge-base, and movedFor, which runs mainRef and a full git log of main through doneJobs), then the result is thrown away. ~/gmod has 22 such worktrees: state --json --no-sync makes ~200 git calls and takes 3.5s, which makes Skiff time out. Skip a worktree whose claimed job is already done on main before any of that work, and work out mainRef and the done set once per board() and hand them to movedFor. The output of state, signals and status must not change.",
+      "files": [
+        "lib/core.mjs"
+      ],
+      "tests": [
+        "test/fast-read.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "with 10 worktrees of landed jobs, gmod state --json --no-sync runs at most 25 git commands",
+          "check": "fast-read"
+        },
+        {
+          "text": "state and signals print the same as before for a repository with landed, claimed and stuck worktrees",
+          "check": "fast-read"
+        },
+        {
+          "text": "the existing test suite passes",
+          "check": "suite"
         }
       ]
     }
