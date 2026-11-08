@@ -25,7 +25,15 @@
     "fast-read": "node --test test/fast-read.test.mjs",
     "ci-pin-1-6-1": "grep -q 'uses: soundheart-studios/gmod@v1.6.1' .github/workflows/gmod.yml",
     "ci-tests": "node --test test/ci.test.mjs",
-    "ci-pin-1-6-2": "grep -q \"uses: soundheart-studios/gmod@v1.6.2\" .github/workflows/gmod.yml"
+    "ci-pin-1-6-2": "grep -q \"uses: soundheart-studios/gmod@v1.6.2\" .github/workflows/gmod.yml",
+    "surfaces-doc": "node --test test/surfaces-doc.test.mjs",
+    "stamp": "node --test test/stamp.test.mjs",
+    "shared-proposal": "node --test test/shared-proposal.test.mjs",
+    "shared-adr-drafts": "node --test test/shared-adr-drafts.test.mjs",
+    "shared-runs": "node --test test/shared-runs.test.mjs",
+    "signal-ids": "node --test test/signal-ids.test.mjs",
+    "decide": "node --test test/decide.test.mjs",
+    "ci-pin-1-7-0": "grep -q \"uses: soundheart-studios/gmod@v1.7.0\" .github/workflows/gmod.yml"
   },
   "jobs": [
     {
@@ -759,6 +767,273 @@
           "check": "ci-pin-1-6-2"
         }
       ]
+    },
+    {
+      "id": "surfaces-doc",
+      "phase": "surfaces",
+      "goal": "One page says what every surface can rely on",
+      "brief": "Add docs/surfaces.md, the one-page surfaces contract: the surfaces table (pane, CLI, CI gate + reviewer, Skiff, Linear, other agents: where each runs and what it needs), then the five items as this plan builds them: the change stamp (stamp job), shared vs local state as a table (ADR \"What gmod shares and what stays local\"), gmod decide and how it keeps decisions a person's (decide job), stable signal ids and their causes (signal-ids job), and versioning (protocol v1, additive; v2 only for a real break), plus why these are core and not managed (ADR 0001). Write it as the contract 1.7 promises; later jobs make it true. Link it from docs/reference.md. The test keeps it honest: it names every command and shared ref the contract promises.",
+      "files": [
+        "docs/surfaces.md",
+        "docs/reference.md"
+      ],
+      "tests": [
+        "test/surfaces-doc.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "docs/surfaces.md names the commands capabilities, state, signals, stamp and decide, and the refs refs/gmod/proposal, refs/gmod/adr-drafts and refs/gmod/runs",
+          "check": "surfaces-doc"
+        },
+        {
+          "text": "docs/reference.md links to docs/surfaces.md",
+          "check": "surfaces-doc"
+        }
+      ]
+    },
+    {
+      "id": "stamp",
+      "phase": "surfaces",
+      "goal": "One stamp moves whenever anything a surface shows changes",
+      "brief": "New lib/stamp.mjs: a counter in <git-common-dir>/gmod/stamp, bumped (write temp file, rename) by every gmod write a signal or state depends on: proposal save/approve/reject, ADR draft save/accept/reject, check runs (evidence), claim, release, and syncClaims/syncMain when they move a ref. stamp(root) returns \"<counter>-<hash8>\", the hash over the tips of main (local and origin) and every refs/gmod/* from one for-each-ref, so a plain git fetch moves it too. `gmod stamp` prints it (fast: no plan read, no board); state --json and signals --json carry it as `stamp`; capabilities lists `stamp` in commands. Additive to protocol v1.",
+      "files": [
+        "lib/stamp.mjs",
+        "lib/core.mjs",
+        "lib/adr.mjs",
+        "lib/state.mjs",
+        "lib/capabilities.mjs",
+        "bin/gmod.mjs"
+      ],
+      "tests": [
+        "test/stamp.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "drafting a job, recording a check run, and claiming each change gmod stamp; reading state or signals does not",
+          "check": "stamp"
+        },
+        {
+          "text": "a fetch that moves refs/gmod/* or origin's main changes the stamp without gmod writing",
+          "check": "stamp"
+        },
+        {
+          "text": "state --json and signals --json carry the same stamp gmod stamp prints, and capabilities lists stamp",
+          "check": "stamp"
+        }
+      ]
+    },
+    {
+      "id": "shared-proposal",
+      "phase": "surfaces",
+      "goal": "Every clone sees the same plan proposal",
+      "brief": "Move the proposal from <git-common-dir>/gmod/proposal.json to refs/gmod/proposal: a commit (gmod identity, empty parents or the previous version as parent) whose tree holds proposal.json. New lib/shared.mjs holds the ref read/write/push helpers the next jobs reuse. Writes push with --force-with-lease on the tip they read; a lost race fetches, re-applies the same edit, and retries a few times, never overwriting. Approve and reject delete the ref locally and on origin. Reading fetches refs/gmod/proposal alongside claims (one fetch). An existing proposal.json from 1.6 is migrated to the ref on first read. No remote: the ref is local only. lib/receive.mjs (Gitea pre-receive) lets refs/gmod/proposal move, unlike claims.",
+      "files": [
+        "lib/shared.mjs",
+        "lib/core.mjs",
+        "lib/receive.mjs"
+      ],
+      "tests": [
+        "test/shared-proposal.test.mjs"
+      ],
+      "after": [
+        "stamp"
+      ],
+      "done_when": [
+        {
+          "text": "a job drafted in one clone shows in another clone's proposal after a read",
+          "check": "shared-proposal"
+        },
+        {
+          "text": "two clones drafting at once both keep their edits; neither overwrites the other",
+          "check": "shared-proposal"
+        },
+        {
+          "text": "approving or rejecting in one clone removes the proposal everywhere",
+          "check": "shared-proposal"
+        },
+        {
+          "text": "a 1.6 proposal.json is carried over to the ref",
+          "check": "shared-proposal"
+        }
+      ]
+    },
+    {
+      "id": "shared-adr-drafts",
+      "phase": "surfaces",
+      "goal": "Every clone sees the same ADR drafts",
+      "brief": "Move ADR drafts from <git-common-dir>/gmod/adr-drafts.json to one ref per draft, refs/gmod/adr-drafts/<slug>, using lib/shared.mjs. One ref each, so drafts never contend. Accept and reject delete the ref locally and on origin. Reads fetch refs/gmod/adr-drafts/* in the same fetch as claims. An existing adr-drafts.json from 1.6 is migrated on first read. lib/receive.mjs lets these refs move.",
+      "files": [
+        "lib/adr.mjs",
+        "lib/shared.mjs",
+        "lib/receive.mjs"
+      ],
+      "tests": [
+        "test/shared-adr-drafts.test.mjs"
+      ],
+      "after": [
+        "shared-proposal"
+      ],
+      "done_when": [
+        {
+          "text": "an ADR drafted in one clone is listed by gmod adr drafts in another",
+          "check": "shared-adr-drafts"
+        },
+        {
+          "text": "accepting or rejecting in one clone removes the draft everywhere",
+          "check": "shared-adr-drafts"
+        },
+        {
+          "text": "a 1.6 adr-drafts.json is carried over to refs",
+          "check": "shared-adr-drafts"
+        }
+      ]
+    },
+    {
+      "id": "shared-runs",
+      "phase": "surfaces",
+      "goal": "Everyone sees which jobs are red, not only their worker",
+      "brief": "After each check run, publish the job's latest verdict to refs/gmod/runs/<job>: a commit whose message is JSON { job, pass, failing (criteria texts), checks (checksKey), by, at, head }. Force-pushed by the claim holder, best effort: a failed or absent push never fails the check. Full evidence stays local. board/states read these refs for jobs claimed elsewhere, so a job red on another machine is stalled here too and gives its signal. sweep deletes runs refs of jobs done on main, with their claims. The gate (gmod verify, ci/) never reads them: a test proves verify's result is the same with a forged green runs ref.",
+      "files": [
+        "lib/core.mjs",
+        "lib/shared.mjs",
+        "lib/receive.mjs"
+      ],
+      "tests": [
+        "test/shared-runs.test.mjs"
+      ],
+      "after": [
+        "shared-adr-drafts"
+      ],
+      "done_when": [
+        {
+          "text": "a job left red in one clone gives its unstick signal in another clone",
+          "check": "shared-runs"
+        },
+        {
+          "text": "a check run still records and passes with no remote or a failing push",
+          "check": "shared-runs"
+        },
+        {
+          "text": "sweep removes the runs ref of a job done on main",
+          "check": "shared-runs"
+        },
+        {
+          "text": "gmod verify gives the same verdict with a forged green runs ref",
+          "check": "shared-runs"
+        }
+      ]
+    },
+    {
+      "id": "signal-ids",
+      "phase": "surfaces",
+      "goal": "The same signal has the same id on every machine",
+      "brief": "Signal ids are already a hash of their cause; prove they hold across clones now that state is shared, and fix any cause that depends on the clone. Keep today's causes ({proposal: first-drafted at}, {adr: slug}, {stuck: job}, {moved: job, level}) so 1.6 ids don't change. Add `rev` to the proposal signal: a short hash of the proposal's content, changing on every edit while the id stays. Additive to protocol v1.",
+      "files": [
+        "lib/signals.mjs",
+        "lib/core.mjs"
+      ],
+      "tests": [
+        "test/signal-ids.test.mjs"
+      ],
+      "after": [
+        "shared-runs"
+      ],
+      "done_when": [
+        {
+          "text": "two clones of one remote give identical ids for a proposal, an ADR draft and a red job",
+          "check": "signal-ids"
+        },
+        {
+          "text": "editing the proposal keeps its signal id and changes its rev",
+          "check": "signal-ids"
+        },
+        {
+          "text": "ids for the recorded 1.6 cases are unchanged",
+          "check": "signal-ids"
+        }
+      ]
+    },
+    {
+      "id": "decide",
+      "phase": "surfaces",
+      "goal": "Any surface can decide with one command, people only",
+      "brief": "New lib/decide.mjs and `gmod decide <signal-id> <action> [--rev r] [--note text] [--via surface] [--json]`. Finds the signal by id; refuses an action not in its actions. proposal: approve | ask-changes (stores the note on the shared proposal for the agent, as the pane's Ask for changes does) | reject; --rev must match or it refuses (changed since seen). ADR draft: accept | reject. unstick signals: does nothing, answers with the command to run. Only a person: refuse under gmod's agent identity (isAgent) or an agent environment (CLAUDECODE, CLAUDE_CODE_ENTRYPOINT, CODEX_* , PI_AGENT, GMOD_AGENT, CI); with a TTY, ask the person to type the signal id back; without one, require --via. Plan, ADR and managed decision commits get `Decided-By: <who>` and `Decided-Via: <cli|pane|skiff|…>` trailers (approve and adr accept too). hooks/shell.ts treats `gmod decide` as a person's decision, like approve. capabilities lists decide. docs/limits.md says plainly what the agent check can't stop.",
+      "files": [
+        "lib/decide.mjs",
+        "lib/core.mjs",
+        "lib/adr.mjs",
+        "lib/managed.mjs",
+        "lib/capabilities.mjs",
+        "bin/gmod.mjs",
+        "hooks/shell.ts",
+        "docs/limits.md"
+      ],
+      "tests": [
+        "test/decide.test.mjs",
+        "test/shell.test.ts"
+      ],
+      "after": [
+        "signal-ids"
+      ],
+      "done_when": [
+        {
+          "text": "decide approves a proposal and accepts an ADR draft by signal id, and the commits carry Decided-By and Decided-Via",
+          "check": "decide"
+        },
+        {
+          "text": "decide refuses a stale --rev, an action the signal doesn't offer, and any run under an agent identity or environment",
+          "check": "decide"
+        },
+        {
+          "text": "decide --json prints the outcome and the new stamp",
+          "check": "decide"
+        },
+        {
+          "text": "the mod's hook refuses gmod decide from an agent's shell",
+          "check": "mod"
+        }
+      ]
+    },
+    {
+      "id": "release-1-7-0",
+      "phase": "release-1-7",
+      "goal": "Release gmod 1.7.0 with the whole surfaces contract",
+      "brief": "Bump to 1.7.0 as release-1-6-2 did: `npm version 1.7.0 --no-git-tag-version`, plugin.json by hand, test/release.test.mjs at 1.7.0 (at least one bullet). CHANGELOG.md 1.7.0 entry above 1.6.2, plain English first: one stamp to watch, proposals, ADR drafts and red jobs shared through refs/gmod, gmod decide for every surface, stable ids; protocol still v1. After landing, tag v1.7.0, publish the GitHub release, then bump every pin together: ~/.local/bin/gmod, ~/.claude/settings.json, CI uses: lines, Skiff.",
+      "files": [
+        "package.json",
+        "package-lock.json",
+        ".claude-plugin/plugin.json",
+        "CHANGELOG.md",
+        "test/release.test.mjs"
+      ],
+      "tests": [
+        "test/release.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "package.json, package-lock.json and plugin.json all say 1.7.0, and CHANGELOG.md has a 1.7.0 entry",
+          "check": "release"
+        }
+      ]
+    },
+    {
+      "id": "ci-gmod-1-7-0",
+      "phase": "release-1-7",
+      "goal": "CI runs gmod 1.7.0 instead of 1.6.2",
+      "brief": "Change `uses: soundheart-studios/gmod@v1.6.2` to `@v1.7.0` in .github/workflows/gmod.yml, nothing else. It lands as a CI change made by a job (CI files only).",
+      "files": [
+        ".github/workflows/gmod.yml"
+      ],
+      "tests": [],
+      "after": [
+        "release-1-7-0"
+      ],
+      "done_when": [
+        {
+          "text": "the gmod workflow uses soundheart-studios/gmod@v1.7.0",
+          "check": "ci-pin-1-7-0"
+        }
+      ]
     }
   ],
   "phases": [
@@ -797,6 +1072,22 @@
       "outcome": "CI runs gmod 1.6.0, and gmod's hook refuses only real decisions, not commands that mention them.",
       "after": [
         "managed-guard"
+      ]
+    },
+    {
+      "id": "surfaces",
+      "title": "Surfaces contract",
+      "outcome": "Every surface (pane, CLI, CI, Skiff, Linear, other agents) can watch one stamp, see the same shared proposals, drafts and red jobs under the same signal ids, and decide through gmod decide.",
+      "after": [
+        "upkeep"
+      ]
+    },
+    {
+      "id": "release-1-7",
+      "title": "Release 1.7",
+      "outcome": "gmod 1.7.0 is released once, with the whole contract, and this repository's CI runs it.",
+      "after": [
+        "surfaces"
       ]
     }
   ]
