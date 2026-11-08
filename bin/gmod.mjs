@@ -124,16 +124,18 @@ function webOf(root, url) {
 // request that lands on green. With no forge (a local origin) or --no-pr, the
 // commit stays where it is; a forge that refuses leaves the commit and says how
 // to try again.
-async function publish(root, flags, branch) {
+// A decision's commit (the one approve or adr accept just made, which is not
+// HEAD when it was made from a job's branch) goes up as its own pull request.
+async function publish(root, flags, branch, commit = 'HEAD') {
   if (flags['no-pr']) return [];
   let forge;
   try { forge = ci.detectForge(root, { url: flags.url }); } catch { return []; }
   try {
     const main = core.planFromDisk(root)?.main ?? 'main';
-    const pr = await ci.publishDecision(root, { branch, url: flags.url, main, forge, token: forge.kind === 'gitea' ? ci.giteaToken({ file: flags['token-file'], web: forge.web }) : undefined });
+    const pr = await ci.publishDecision(root, { branch, commit, url: flags.url, main, forge, token: forge.kind === 'gitea' ? ci.giteaToken({ file: flags['token-file'], web: forge.web }) : undefined });
     return [`${pr.existed ? 'already open' : 'opened'}: ${pr.url}`, 'lands by itself once its checks pass'];
   } catch (e) {
-    return [`couldn't open its pull request (${e.message.split('\n')[0]}): git push -u origin HEAD:${branch}, then gmod pr --branch ${branch} --auto`];
+    return [`couldn't open its pull request (${e.message.split('\n')[0]}): git push -u origin ${commit}:refs/heads/${branch}, then gmod pr --branch ${branch} --auto`];
   }
 }
 
@@ -366,7 +368,7 @@ async function main() {
     }
     case 'approve': {
       const r = core.approve(root);
-      const lines = await publish(root, flags, `gmod/plan-${r.commit}`);
+      const lines = await publish(root, flags, `gmod/plan-${r.commit}`, r.sha);
       return out(flags, { ...r, published: lines }, [`approved: ${r.summary} (commit ${r.commit} on ${r.branch || 'a detached HEAD'})`, ...lines].join('\n'));
     }
     case 'reject': {
@@ -427,7 +429,7 @@ async function runAdr(root, sub, rest, flags) {
   }
   if (sub === 'accept') {
     const r = adr.acceptAdr(root, rest[0]);
-    const lines = await publish(root, flags, `gmod/adr-${r.id}`);
+    const lines = await publish(root, flags, `gmod/adr-${r.id}`, r.sha);
     return out(flags, { ...r, published: lines }, [`accepted ADR ${r.id}: ${r.title}${r.supersedes ? ` (supersedes ${r.supersedes})` : ''}`, ...lines].join('\n'));
   }
   if (sub === 'reject') {
