@@ -9,6 +9,7 @@ import * as setupLib from '../lib/setup.mjs';
 import * as runnerLib from '../lib/runner.mjs';
 import * as stateLib from '../lib/state.mjs';
 import * as signalsLib from '../lib/signals.mjs';
+import * as capsLib from '../lib/capabilities.mjs';
 import { readFileSync as readSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -52,6 +53,7 @@ const HELP = `gmod: planned work with proof, on plain git
   gmod notice <path>              what the agent working at <path> should hear, once
   gmod sweep                      let go of claims on jobs done on main
   gmod version                    which gmod this is (also --version)
+  gmod capabilities               the protocol it speaks and what it enforces (--json: the record faces like Skiff read)
 
   gmod adr propose '<draft json>'  draft a decision: {title, scope, context, decision, rules: [{level, text}], supersedes}
   gmod adr drafts                 the drafts waiting for a person
@@ -172,6 +174,11 @@ async function main() {
   if (cmd === 'version') {
     const { version } = JSON.parse(readSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
     return out(flags, { version, commit: process.env.GMOD_COMMIT || null }, `gmod ${version}${process.env.GMOD_COMMIT ? ` (${process.env.GMOD_COMMIT})` : ''}`);
+  }
+  // What this gmod speaks and enforces: like version, no repository needed.
+  if (cmd === 'capabilities') {
+    const c = capsLib.capabilities();
+    return out(flags, c, capsLib.describe(c));
   }
   // Server side: neither needs a work tree.
   if (cmd === 'receive') {
