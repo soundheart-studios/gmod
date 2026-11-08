@@ -344,12 +344,14 @@ export const register: Register = on => {
     return withNotice($, ran, await $.session.cwd())
   }).catch(($, e, next) => (next.called ? next(e) : { deny: 'gmod: its command guard failed; nothing ran' }))
 
-  // A subagent is told the routine in its own prompt, once: a prompt that
-  // already carries it passes as it is, so what auto mode reviewed is what runs.
+  // A subagent is told the routine in its own prompt. The hook never adds it:
+  // a changed prompt is not the one auto mode reviewed. A prompt without it is
+  // refused with the routine to add, so the agent sends it again, whole.
   on('tool.call', { tool: 'Agent' }, async ($, e, next) => {
     const s = await read($, status)
-    if (!s?.governed || e.prompt.includes(FOR_SUBAGENTS.trim())) return next(e)
-    return next({ ...e, prompt: e.prompt + FOR_SUBAGENTS })
+    const routine = FOR_SUBAGENTS.replace(/^\s*---\s*/, '').trim()
+    if (!s?.governed || e.prompt.includes(routine)) return next(e)
+    return { deny: `gmod: a subagent here needs gmod's routine in its prompt, and gmod won't change your prompt for you. Add this paragraph to the end of the prompt, word for word, and send the call again:\n\n${routine}` }
   }).catch(($, e, next) => next(e))
 
   // ---- the person's command ----
