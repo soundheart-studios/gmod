@@ -20,8 +20,11 @@
 // GITHUB_SERVER_URL or GITEA_URL on Gitea), and GMOD_FORGE_TOKEN: the forge
 // starts no checks for what CI's own token pushes, so the update is made
 // with a person's token when the repository keeps one. Without one, on
-// GitHub, a repository_dispatch ("gmod", {check: <number>}) starts them:
-// that is the one event CI's own token may start a run with.
+// GitHub, a repository_dispatch ("gmod", {check: <number>, head: <sha>})
+// starts them: that is the one event CI's own token may start a run with,
+// and it needs no approval (the pull_request run that CI's own push starts
+// is held for one). The new head's gate shows pending meanwhile, and a head
+// whose gate has already reported isn't started twice.
 import * as core from '../lib/core.mjs';
 
 const repo = process.env.GITHUB_REPOSITORY;
@@ -102,6 +105,19 @@ if (scheduled) {
 }
 
 // ---- 2. bring the open jobs up to date ----
+// The head a pull request's branch moves to once the forge has taken main
+// in, or null if it can't be read or hasn't moved within the wait.
+const WAIT_MS = Number(process.env.GMOD_CATCH_UP_WAIT_MS || 3000);
+async function newHead(pr) {
+  for (let i = 0; i < 10; i++) {
+    const now = await call('GET', `/pulls/${pr.number}`);
+    if (!now.ok) return null;
+    const head = now.json?.head?.sha;
+    if (head && head !== pr.head.sha) return head;
+    await new Promise(ok => setTimeout(ok, WAIT_MS));
+  }
+  return null;
+}
 const open = await call('GET', github ? '/pulls?state=open&per_page=50' : '/pulls?state=open&limit=50');
 const jobPrs = (open.ok ? open.json ?? [] : []).filter(pr => (pr.head?.ref ?? '').startsWith('gmod/') && pr.head?.repo?.full_name === repo);
 for (const pr of jobPrs) {
@@ -120,7 +136,22 @@ for (const pr of jobPrs) {
   if (updater) {
     console.log(`after-merge: #${pr.number} (${ref}) takes ${main} in; its checks run again`);
   } else if (github) {
-    const d = await call('POST', '/dispatches', { event_type: 'gmod', client_payload: { check: pr.number } });
+    // CI's own token took main in: GitHub holds the pull_request run that
+    // push starts (actor github-actions[bot]) for a person to approve. Start
+    // the gate with a dispatch instead, once per head: GitHub takes main in a
+    // moment after answering, so wait for the new head, and leave it alone if
+    // its gate has already reported (another run caught it up and started it).
+    const head = await newHead(pr);
+    if (head) {
+      const st = await call('GET', `/commits/${head}/status`);
+      if ((st.ok ? st.json?.statuses ?? [] : []).some(x => x.context === context('gate'))) {
+        console.log(`after-merge: #${pr.number} (${ref}) takes ${main} in; ${head.slice(0, 10)} is already checked (or being checked), so no second run`);
+        continue;
+      }
+      await call('POST', `/statuses/${head}`, { state: 'pending', context: context('gate'), description: `caught up with ${main}; the gate run is starting` });
+    }
+    const d = await call('POST', '/dispatches', { event_type: 'gmod', client_payload: head ? { check: pr.number, head } : { check: pr.number } });
+    if (!d.ok && head) await call('POST', `/statuses/${head}`, { state: 'error', context: context('gate'), description: `caught up with ${main}, but the gate run couldn't be started (${d.status})` });
     console.log(`after-merge: #${pr.number} (${ref}) takes ${main} in; ${d.ok ? 'its checks are started again' : `its checks couldn't be started again (${d.status})`}`);
   } else {
     console.log(`after-merge: #${pr.number} (${ref}) takes ${main} in (with CI's own token: its checks won't start again until it gets a new commit; set the GMOD_FORGE_TOKEN secret)`);
