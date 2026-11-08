@@ -33,7 +33,9 @@
     "shared-runs": "node --test test/shared-runs.test.mjs",
     "signal-ids": "node --test test/signal-ids.test.mjs",
     "decide": "node --test test/decide.test.mjs",
-    "ci-pin-1-7-0": "grep -q \"uses: soundheart-studios/gmod@v1.7.0\" .github/workflows/gmod.yml"
+    "ci-pin-1-7-0": "grep -q \"uses: soundheart-studios/gmod@v1.7.0\" .github/workflows/gmod.yml",
+    "empty-proposal": "node --test test/empty-proposal.test.mjs",
+    "decision-pr-title": "node --test test/decision-pr-title.test.mjs"
   },
   "jobs": [
     {
@@ -820,6 +822,9 @@
           "text": "state --json and signals --json carry the same stamp gmod stamp prints, and capabilities lists stamp",
           "check": "stamp"
         }
+      ],
+      "after": [
+        "empty-proposal"
       ]
     },
     {
@@ -1032,6 +1037,50 @@
         {
           "text": "the gmod workflow uses soundheart-studios/gmod@v1.7.0",
           "check": "ci-pin-1-7-0"
+        }
+      ]
+    },
+    {
+      "id": "empty-proposal",
+      "phase": "surfaces",
+      "goal": "No empty plan proposals, and a clear word if one exists",
+      "brief": "Two rough edges in lib/core.mjs found landing the 1.7 plan. (1) describeProposal calls draft(), which starts a fresh proposal when none is pending, so describing after an approve leaves an empty proposal behind: refuse instead (\"there is no proposal to describe\"). (2) approve on a proposal that changes nothing runs git commit on an unchanged plan and fails with a raw git error (\"git commit -q -m plan: no change\"): refuse before writing, with \"the proposal changes nothing: reject it\", and the proposal card/signal offers reject only (ready is false for an empty diff).",
+      "files": [
+        "lib/core.mjs"
+      ],
+      "tests": [
+        "test/empty-proposal.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "describing with no proposal pending is refused and creates no proposal",
+          "check": "empty-proposal"
+        },
+        {
+          "text": "approving a proposal that changes nothing is refused in plain words and commits nothing",
+          "check": "empty-proposal"
+        },
+        {
+          "text": "an empty proposal is not ready, so its signal offers no approve",
+          "check": "empty-proposal"
+        }
+      ]
+    },
+    {
+      "id": "decision-pr-title",
+      "phase": "surfaces",
+      "goal": "A decision's pull request is titled by its own commit",
+      "brief": "openPr in lib/ci.mjs titles a plan, ADR, managed or CI pull request by subjects.at(-1): the oldest commit on the branch past origin/main. When local main holds an earlier decision that hasn't landed yet, that is the wrong commit: #56 (the 1.7 plan) was titled with ADR 0002's subject, #57 with the previous plan change's. Title it by the branch tip's own subject (the decision just made). Jobs keep their current rule.",
+      "files": [
+        "lib/ci.mjs"
+      ],
+      "tests": [
+        "test/decision-pr-title.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "a plan change committed on top of an unlanded ADR commit opens its pull request titled with the plan commit's subject",
+          "check": "decision-pr-title"
         }
       ]
     }
