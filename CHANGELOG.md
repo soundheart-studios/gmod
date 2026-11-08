@@ -2,6 +2,28 @@
 
 What each gmod release changes for you, with the details underneath.
 
+## 1.6.0 — 2026-11-08
+
+Apps like Skiff can now read gmod directly, and there's a managed mode they can use later, off unless a person turns it on.
+
+### Other apps can read gmod
+
+Three read-only commands print what gmod knows as JSON, in the v1 shape Skiff reads. Without `--json` they print the same in plain text; they bring claims and main up to date first, like `gmod status`, unless you pass `--no-sync`.
+
+- **`gmod state --json` shows the plan and how far along it is:** phases, jobs and the state of each, and recent landings. A job that has landed on main shows as `proven`, with the date it landed; a claimed job shows as `working`, or `stuck` when it has stalled. (#29)
+- **`gmod signals --json` lists what needs a person:** a plan proposal or ADR waiting for a decision, a stuck job, a job that clashes with main. Each item has a stable id that stays the same while the problem lasts, and the item disappears once it's resolved. Nothing is stored. (#30)
+- **`gmod capabilities --json` says what this gmod can do:** its version, protocol `1.0`, and what enforces the rules (the mod, checks, the gate, the reviewer, the forge, the person), each pointing at the code that does it. It matches Skiff's v1 fixture and works outside a repository, like `gmod version`. (#31)
+- **The pane's "Needs you" uses the same list.** It's now built from `lib/signals.mjs`, the code behind `gmod signals`, so the pane and the command always show the same items in the same words. (#30)
+
+### Managed mode, off by default
+
+Managed mode is for apps like Skiff that run gmod for you (ADR 0001). It's off by default, nothing works differently while it's off, and only a person can switch it.
+
+- **`gmod manage [on|off|status]` switches it.** It writes `.gmod/managed.json` as a decision commit from the person, like approving a plan, and this also works from a job's branch. `gmod state --json` shows `managed: true|false`. (#32)
+- **The gate lands a switch only on its own.** A pull request that changes `.gmod/managed.json` must change nothing else, and the file must be valid (`{ v: 1, managed: true|false }`). (#35)
+- **An agent can't switch it.** The mod refuses `gmod manage on` and `gmod manage off` in an agent's shell, including through `node`, `npx`, `sh -c` or `eval`. `gmod manage` and `gmod manage status` still run. (#34)
+- **The AI reviewer treats a switch as governance.** It checks whether the switch weakens gmod's guarantees instead of skipping it, and an agent that gets refused is told that switching managed mode is the person's decision. (#37)
+
 ## 1.5.0 — 2026-11-08
 
 Fewer interruptions, the same guarantee: nothing untested lands on main.
