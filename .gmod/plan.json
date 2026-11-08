@@ -554,6 +554,31 @@
           "check": "suite"
         }
       ]
+    },
+    {
+      "id": "release-1-6-0",
+      "phase": "managed-guard",
+      "goal": "Release gmod 1.6.0 so Skiff can use the new commands",
+      "files": [
+        "package.json",
+        "package-lock.json",
+        ".claude-plugin/plugin.json",
+        "CHANGELOG.md",
+        "test/release.test.mjs"
+      ],
+      "tests": [
+        "test/release.test.mjs"
+      ],
+      "after": [
+        "managed-review"
+      ],
+      "brief": "Bump to 1.6.0 as release-1-5-0 did: `npm version 1.6.0 --no-git-tag-version` (package.json, package-lock.json root and packages[\"\"]), plugin.json by hand, and point test/release.test.mjs at 1.6.0. Add a CHANGELOG.md 1.6.0 entry above 1.5.0, plain-English impact first with a few tech details (commands, files, PR numbers): gmod state/signals/capabilities --json for faces like Skiff (#29, #30, #31); the managed-mode switch, person-only, gated and reviewed (#32, #34, #35, #37); the pane's Needs-you now comes from lib/signals.mjs. After landing, the person tags v1.6.0 on the landed commit and publishes the release.",
+      "done_when": [
+        {
+          "text": "package.json, package-lock.json and plugin.json all say 1.6.0, and CHANGELOG.md has a 1.6.0 entry",
+          "check": "release"
+        }
+      ]
     }
   ],
   "phases": [
