@@ -575,3 +575,38 @@ test('the agent keeps a journal, and an opened job shows its last lines', async 
   expect(await ui.find({ type: 'Text', text: /^✎ 10:05 red \(sum adds\)$/ })).toBeDefined()
   await ui.unmount()
 })
+
+// A session keeps the mod it started with. After gmod is upgraded on this
+// machine, the mod says to restart instead of failing in its old ways.
+function versions(mod: string, cli: string | null, rest: (args: readonly string[]) => Answer) {
+  return (args: readonly string[]): Answer => {
+    if (args[0] === 'version') return { exitCode: 0, stdout: `gmod ${mod}` }
+    if (args[0] === 'gmod version') return cli === null ? { exitCode: 127, stdout: '', stderr: 'gmod: not found' } : { exitCode: 0, stdout: `gmod ${cli}` }
+    return rest(args)
+  }
+}
+const NO_PROPOSAL = (args: readonly string[]): Answer =>
+  args[0] === 'approve' ? { exitCode: 1, stdout: '', stderr: 'gmod: there is no proposal to approve' } : { exitCode: 0, stdout: STATUS }
+const PERSON = { kind: 'composer' }
+
+test('a newer gmod on this machine than the mod: the pane and a failed /gmod approve say to restart', async ($, on) => {
+  await started($, on, versions('1.6.2', '1.7.0', NO_PROPOSAL))
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: /gmod 1\.7\.0 is installed: restart Claude Code to load it/ })).toBeDefined()
+  await ui.unmount()
+  const r = await $.command.run({ command: 'gmod', args: 'approve', origin: PERSON } as never)
+  expect(r.text).toContain('there is no proposal to approve')
+  expect(r.text).toContain('gmod 1.7.0 is installed: restart Claude Code to load it')
+})
+
+for (const [name, cli] of [['the same version', '1.7.0'], ['an older one', '1.6.2'], ['no gmod on the PATH', null]] as const) {
+  test(`${name} on this machine: nothing is added`, async ($, on) => {
+    await started($, on, versions('1.7.0', cli, NO_PROPOSAL))
+    const ui = await $.ui.mount(PANE)
+    expect(await ui.find({ type: 'Text', text: /restart Claude Code/ })).toBeUndefined()
+    await ui.unmount()
+    const r = await $.command.run({ command: 'gmod', args: 'approve', origin: PERSON } as never)
+    expect(r.text).toContain('there is no proposal to approve')
+    expect(r.text).not.toContain('restart Claude Code')
+  })
+}
