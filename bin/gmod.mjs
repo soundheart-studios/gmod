@@ -13,6 +13,7 @@ import * as capsLib from '../lib/capabilities.mjs';
 import * as managedLib from '../lib/managed.mjs';
 import * as stampLib from '../lib/stamp.mjs';
 import * as decideLib from '../lib/decide.mjs';
+import * as requestsLib from '../lib/requests.mjs';
 import { createInterface } from 'node:readline/promises';
 import { readFileSync as readSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -51,7 +52,13 @@ const HELP = `gmod: planned work with proof, on plain git
   gmod reject [reason]            a person's no: drop the draft
   gmod decide <signal-id> <action> [--rev r] [--note text] [--via surface]
                                   a person's decision on a signal, from any surface: approve,
-                                  ask-changes or reject a proposal; accept or reject an ADR draft
+                                  ask-changes or reject a proposal; accept or reject an ADR draft;
+                                  answer (--note) or resolve an agent's request
+  gmod ask <question> [--options '<json list>']
+                                  ask the person about the job claimed here; the answer
+                                  comes on a later tool round (gmod notice)
+  gmod requests [--all] [--job <id>]
+                                  open requests; --all also answered and resolved ones
   gmod manage [on | off | status] managed mode (.gmod/managed.json, off by default): a person's
                                   decision, committed alone; with no argument, whether it is on
   gmod prove <job> --base <ref> [--head <ref>]
@@ -124,7 +131,7 @@ function parse(argv) {
     const a = argv[i];
     if (!a.startsWith('--')) rest.push(a);
     else if (a === '--version') rest.unshift('version');
-    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr', '--advice', '--no-wait', '--candidates', '--resume', '--app'].includes(a)) flags[a.slice(2)] = true;
+    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr', '--advice', '--no-wait', '--candidates', '--resume', '--app', '--all'].includes(a)) flags[a.slice(2)] = true;
     else if (a === '--trailer') (flags.trailer ??= []).push(argv[++i]);
     else flags[a.slice(2)] = argv[++i];
   }
@@ -429,6 +436,20 @@ async function main() {
       const r = core.approve(root, { via: flags.via ?? 'cli' });
       const lines = await publish(root, flags, `gmod/plan-${r.commit}`, r.sha);
       return out(flags, { ...r, published: lines }, [`approved: ${r.summary} (commit ${r.commit} on ${r.branch || 'a detached HEAD'})`, ...lines].join('\n'));
+    }
+    case 'ask': {
+      let options;
+      if (flags.options !== undefined) {
+        try { options = JSON.parse(flags.options); } catch { throw new core.GmodError('--options takes a JSON list, e.g. \'["cents","floats"]\''); }
+      }
+      const r = requestsLib.ask(root, args.join(' '), { options });
+      return out(flags, r, `asked (request ${r.id}): the person's answer comes on a later tool round, or with gmod requests --all --job ${r.job}`);
+    }
+    case 'requests': {
+      if (!flags['no-sync']) core.syncClaims(root);
+      const list = requestsLib.requests(root, { all: !!flags.all, job: flags.job });
+      const line = r => `${r.id} ${r.job}: ${r.question}${r.options ? ` [${r.options.join(' | ')}]` : ''}${r.answer != null ? `\n    answered by ${r.answeredBy}: ${r.answer}` : r.resolved ? `\n    resolved by ${r.answeredBy}${r.note ? `: ${r.note}` : ''}` : ''}`;
+      return out(flags, { requests: list }, list.length ? list.map(line).join('\n') : (flags.all ? 'no requests' : 'no open requests'));
     }
     case 'decide': {
       const [id, action] = args;
