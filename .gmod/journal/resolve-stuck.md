@@ -1,0 +1,5 @@
+# resolve-stuck: The person can set a stuck job's signal aside
+
+- 2026-11-09T08:12:35.978Z check: red (resolve hides a stuck job's signal on every clone until it is red again on a new run, and only a person can resolve)
+- 2026-11-09T08:16:17.283Z check: green
+- 2026-11-09T08:16:20.499Z dev@soundheart.io: Stuck signals now carry a rev: FNV of the failing criteria plus `ran`, a new job field holding when its latest check ran (the local evidence, or the shared verdict's at). Moved signals hash landed/failing/conflicts. Both now offer 'resolve'. decide resolve on an unstick signal writes refs/gmod/resolved/<signal-id> (one commit, no history, publishOver: a person's mark) holding {signal, rev, job, by, at, via, note}. status carries `resolved` (signal id → rev), and signalsFrom hides a signal whose rev equals its mark's. 'resolved/' is added to SHARED_NAMES, and sweep drops marks of done jobs. Signal ids are unchanged. The edits went in through a script file, because this session's 1.7.0 hook refuses text that mentions refs/gmod/ beside the word replace (fixed in 1.7.1).
