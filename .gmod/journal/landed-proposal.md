@@ -1,0 +1,5 @@
+# landed-proposal: A landed proposal is dropped, never pushed back
+
+- 2026-11-09T07:31:01.079Z check: red (after an approve, a stale local copy of the approved draft is dropped by the next sync, here and on origin, instead of being pushed; a landed proposal is not shown by gmod proposal or signals, while a draft against the current plan still is)
+- 2026-11-09T07:32:09.510Z check: green
+- 2026-11-09T07:34:32.622Z dev@soundheart.io: Reproduced Skiff's report in a scratch repo: a stale local refs/gmod/proposal at the approved draft with no tracking copy is pushed back by the next sync's reconcile (theirs === before → publish), showing "no changes" and "changed since drafted". Concurrent state/signals syncs during approve didn't produce the stale copy, so the producer is unknown; fixed from the data instead. landed(p): its plan equals the plan on disk, on main or on origin's main while its base hash differs. syncClaims deletes a landed local copy before the fetch (so reconcile never pushes it), and unpublishes one that came back from origin after reconciling. proposal() returns null for a landed one. Full suite 177/178 pass, 0 fail.
