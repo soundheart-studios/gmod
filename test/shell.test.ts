@@ -164,6 +164,11 @@ test('approving, rejecting and accepting are read word by word: a mention is tex
   expect(decision('gmod manage on')).toBe('managed')
   expect(decision("sh -c 'gmod manage off'")).toBe('managed')
   expect(decision('gmod manage status')).toBe(null)
+  // Setup that turns managed mode on is the same switch.
+  expect(decision('gmod setup --json --managed --yes')).toBe('managed')
+  expect(decision("sh -c 'gmod setup --managed'")).toBe('managed')
+  expect(decision('gmod setup --json --runs-on gpu-box')).toBe(null)
+  expect(decision("grep -- '--managed' docs/setup.md")).toBe(null)
 })
 
 test('merging a pull request by hand is caught; gmod pr --auto is not', () => {

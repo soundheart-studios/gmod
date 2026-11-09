@@ -131,7 +131,7 @@ function parse(argv) {
     const a = argv[i];
     if (!a.startsWith('--')) rest.push(a);
     else if (a === '--version') rest.unshift('version');
-    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr', '--advice', '--no-wait', '--candidates', '--resume', '--app', '--all'].includes(a)) flags[a.slice(2)] = true;
+    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr', '--advice', '--no-wait', '--candidates', '--resume', '--app', '--all', '--managed', '--yes'].includes(a)) flags[a.slice(2)] = true;
     else if (a === '--trailer') (flags.trailer ??= []).push(argv[++i]);
     else flags[a.slice(2)] = argv[++i];
   }
@@ -220,9 +220,16 @@ async function main() {
   }
   const root = core.repoRoot();
   if (cmd === 'setup') {
+    // Turning managed mode on is the person's switch, as gmod manage on is.
+    if (flags.managed) {
+      const why = decideLib.agentReason(root);
+      if (why) throw new core.GmodError(`only a person turns managed mode on, and this runs under ${why}: run gmod setup --managed at your own terminal`);
+      if (!flags.yes && !(process.stdin.isTTY && process.stdout.isTTY)) throw new core.GmodError('setup --managed without a terminal needs --yes: the person running it says so');
+    }
     const reviewer = flags.reviewer === 'none' ? { kind: 'none' } : flags['reviewer-url'] ? { kind: 'openai', url: flags['reviewer-url'], model: flags['reviewer-model'] } : { kind: 'claude' };
-    const r = await setupLib.setup(root, { url: flags.url, reviewer, blocking: !flags.advice, setup: flags.setup ?? '', ref: flags.ref, runsOn: flags['runs-on'], agents: flags.agents ? Number(flags.agents) : 0, app: !!flags.app, wait: !flags['no-wait'], log: s => !flags.json && console.log(`${s.ok ? '✓' : '✗'} ${s.msg}`) });
+    const r = await setupLib.setup(root, { url: flags.url, reviewer, blocking: !flags.advice, setup: flags.setup ?? '', ref: flags.ref, runsOn: flags['runs-on'], agents: flags.agents ? Number(flags.agents) : 0, app: !!flags.app, managed: !!flags.managed, via: flags.via ?? 'cli', wait: !flags['no-wait'], log: s => !flags.json && console.log(`${s.ok ? '✓' : '✗'} ${s.msg}`) });
     if (flags.json) out(flags, r, '');
+    else if (r.left.length) console.log(`left for you:\n${r.left.map(l => `  - ${l}`).join('\n')}`);
     return r.ok ? 0 : 1;
   }
   if (cmd === 'app' && (args[0] === 'create' || args[0] === 'finish')) {

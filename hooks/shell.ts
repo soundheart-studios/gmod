@@ -163,6 +163,8 @@ function commandDecision(words: string[], depth: number): Decision | null {
   if (sub === 'approve' || sub === 'reject' || sub === 'decide') return 'plan'
   if (sub === 'adr' && (how === 'accept' || how === 'reject')) return 'plan'
   if (sub === 'manage' && (how === 'on' || how === 'off')) return 'managed'
+  // Setup that turns managed mode on makes the same switch.
+  if (sub === 'setup' && rest.includes('--managed')) return 'managed'
   return null
 }
 
