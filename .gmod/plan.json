@@ -48,7 +48,8 @@
     "setup-json": "node --test test/setup-json.test.mjs",
     "doctor-json": "node --test test/doctor-json.test.mjs",
     "fixtures": "node --test test/fixtures.test.mjs test/surfaces-doc.test.mjs",
-    "ci-pin-1-8-0": "grep -q \"uses: soundheart-studios/gmod@v1.8.0\" .github/workflows/gmod.yml"
+    "ci-pin-1-8-0": "grep -q \"uses: soundheart-studios/gmod@v1.8.0\" .github/workflows/gmod.yml",
+    "status-brief": "node --test test/status-brief.test.mjs"
   },
   "jobs": [
     {
@@ -1542,6 +1543,31 @@
           "check": "ci-pin-1-8-0"
         }
       ]
+    },
+    {
+      "id": "status-brief",
+      "phase": "lean-status",
+      "goal": "A brief status for agents, used by mcp__gmod__status",
+      "brief": "mcp__gmod__status returns all of `gmod status` (~200 KB, ~22k tokens on this repo): every job carries the full text of each ADR covering it (~48%) and its journal (~33%), and nearly all jobs are done. Add `gmod status --brief` (lib/core.mjs statusBrief, bin/gmod.mjs flag): the claim in full (with its ADRs), evidence, sawRed, gate, next, requests, resolved, proposal and ADR drafts as now; phases as id/title/state/done/total/waiting; done jobs as a list of ids only; each unfinished job without ADR text (ADR ids only) and its journal cut to the last 3 entries; the ADRs those jobs cite listed once at top level by id and title. hooks/register.tsx: the mcp__gmod__status tool runs `status --no-sync --brief`. The full `status` JSON is unchanged: the pane, `gmod state` and Skiff keep reading it.",
+      "files": [
+        "lib/core.mjs",
+        "bin/gmod.mjs",
+        "hooks/register.tsx"
+      ],
+      "tests": [
+        "test/status-brief.test.mjs",
+        "test/mod.test.tsx"
+      ],
+      "done_when": [
+        {
+          "text": "gmod status --brief keeps the claim in full, lists done jobs by id only, gives unfinished jobs ADR ids not text, and lists each cited ADR once; full status is unchanged",
+          "check": "status-brief"
+        },
+        {
+          "text": "mcp__gmod__status runs gmod status --brief",
+          "check": "mod"
+        }
+      ]
     }
   ],
   "phases": [
@@ -1645,6 +1671,14 @@
       "after": [
         "asks",
         "govern"
+      ]
+    },
+    {
+      "id": "lean-status",
+      "title": "Lean status",
+      "outcome": "An agent's mcp__gmod__status returns what it needs to work (its claim and the open jobs) in a few thousand tokens, however long the plan's history grows.",
+      "after": [
+        "release-1-8"
       ]
     }
   ]
