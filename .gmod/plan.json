@@ -49,7 +49,8 @@
     "doctor-json": "node --test test/doctor-json.test.mjs",
     "fixtures": "node --test test/fixtures.test.mjs test/surfaces-doc.test.mjs",
     "ci-pin-1-8-0": "grep -q \"uses: soundheart-studios/gmod@v1.8.0\" .github/workflows/gmod.yml",
-    "status-brief": "node --test test/status-brief.test.mjs"
+    "status-brief": "node --test test/status-brief.test.mjs",
+    "ci-pin-1-8-1": "grep -q \"uses: soundheart-studios/gmod@v1.8.1\" .github/workflows/gmod.yml"
   },
   "jobs": [
     {
@@ -1566,6 +1567,50 @@
         {
           "text": "mcp__gmod__status runs gmod status --brief",
           "check": "mod"
+        }
+      ]
+    },
+    {
+      "id": "release-1-8-1",
+      "phase": "lean-status",
+      "after": [
+        "status-brief"
+      ],
+      "goal": "Release gmod 1.8.1",
+      "brief": "Bump to 1.8.1 as 1.8.0 did: npm version 1.8.1 --no-git-tag-version, plugin.json by hand, test/release.test.mjs at 1.8.1, CHANGELOG.md 1.8.1 entry (mcp__gmod__status returns gmod status --brief: the claim and open jobs, done jobs by id, each ADR once; ~7.5 KB instead of ~200 KB on a long plan). After landing: tag v1.8.1, publish the GitHub release, move ~/.local/bin/gmod and ~/.claude/settings.json, tell the open sessions.",
+      "files": [
+        "package.json",
+        "package-lock.json",
+        ".claude-plugin/plugin.json",
+        "CHANGELOG.md",
+        "test/release.test.mjs"
+      ],
+      "tests": [
+        "test/release.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "package.json, package-lock.json and plugin.json all say 1.8.1, and CHANGELOG.md has a 1.8.1 entry",
+          "check": "release"
+        }
+      ]
+    },
+    {
+      "id": "ci-gmod-1-8-1",
+      "phase": "lean-status",
+      "after": [
+        "release-1-8-1"
+      ],
+      "goal": "CI runs gmod 1.8.1",
+      "brief": "Change `uses: soundheart-studios/gmod@v1.8.0` to `@v1.8.1` in .github/workflows/gmod.yml, nothing else, after v1.8.1 is tagged.",
+      "files": [
+        ".github/workflows/gmod.yml"
+      ],
+      "tests": [],
+      "done_when": [
+        {
+          "text": "the gmod workflow uses soundheart-studios/gmod@v1.8.1",
+          "check": "ci-pin-1-8-1"
         }
       ]
     }
