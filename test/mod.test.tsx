@@ -651,3 +651,11 @@ test('the pane shows what an agent asks; the person answers or resolves it, an a
   expect(seen.runs.find(r => r.args[0] === 'decide' && r.args[2] === 'resolve')!.args).toEqual(['decide', id, 'resolve', '--note', 'not needed', '--via', 'pane'])
   expect((await $.command.run({ command: 'gmod', args: `resolve ${id}` } as never)).text).toContain('Only a person')
 })
+
+test("the agent's status tool asks for the brief status, not the plan's whole history", async ($, on) => {
+  const seen = await governed($, on)
+  await $.tool.call({ tool: 'mcp__gmod__status' } as never)
+  const asked = seen.runs.filter(r => r.args[0] === 'status' && r.args.includes('--brief'))
+  expect(asked.length).toBe(1)
+  expect(asked[0]?.args.includes('--no-sync')).toBe(true)
+})
