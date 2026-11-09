@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
+import { signalsFrom as signalsOf } from '../lib/signals.mjs'
 
 type Engine = Parameters<TestBody>[0]
 type On = Parameters<TestBody>[1]
@@ -610,3 +611,43 @@ for (const [name, cli] of [['the same version', '1.7.0'], ['an older one', '1.6.
     expect(r.text).not.toContain('restart Claude Code')
   })
 }
+
+// Requests (1.8): an agent asks the person from Claude Code; the pane shows
+// what's asked, and the person answers or resolves it there.
+const REQUEST = { id: 'r1a2b3c4d5e6', job: 'add-sum', question: 'Cents or floats?', options: ['cents', 'floats'], by: 'agent@x.io', at: '2026-11-09T10:00:00Z' }
+const ASKED_STATUS = JSON.stringify({ ...JSON.parse(STATUS), requests: [REQUEST] })
+const ANSWER = 'gmod: the person answered your question about add-sum, "Cents or floats?": cents'
+const requestId = async () =>
+  (signalsOf(JSON.parse(ASKED_STATUS)) as { id: string; cause: Record<string, unknown> }[]).find(s => 'request' in s.cause)!.id
+
+test('mcp__gmod__ask raises a request; the answer reaches the agent on a later step', async ($, on) => {
+  const seen = await started($, on, args =>
+    args[0] === 'ask' ? { exitCode: 0, stdout: JSON.stringify(REQUEST) }
+    : args[0] === 'notice' ? { exitCode: 0, stdout: ANSWER }
+    : { exitCode: 0, stdout: args[0] === 'status' ? ASKED_STATUS : 'ok' },
+  )
+  const out = await $.tool.call({ tool: 'mcp__gmod__ask', question: 'Cents or floats?', options: ['cents', 'floats'], dir: '/repo-wt' } as never)
+  const run = seen.runs.find(r => r.args[0] === 'ask')!
+  expect(run.args).toEqual(['ask', 'Cents or floats?', '--options', '["cents","floats"]', '--json'])
+  expect(run.cwd).toBe('/repo-wt')
+  expect(String(out.result)).toContain(REQUEST.id)
+  expect(String(out.result)).toContain("don't guess")
+  // No job moved: the notice is asked for because a question is out.
+  const next = await $.tool.call({ tool: 'Write', file_path: '/repo-wt/src/b.mjs', content: 'x' })
+  expect(next.context?.at(-1)).toBe(ANSWER)
+})
+
+test('the pane shows what an agent asks; the person answers or resolves it, an agent cannot', async ($, on) => {
+  const seen = await started($, on, () => ({ exitCode: 0, stdout: ASKED_STATUS }))
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: /add-sum asks: Cents or floats\?/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /\/gmod answer/ })).toBeDefined()
+  await ui.unmount()
+  const id = await requestId()
+  expect((await $.command.run({ command: 'gmod', args: `answer ${id} cents` } as never)).text).toContain('Only a person')
+  await $.command.run({ command: 'gmod', args: `answer ${id} cents`, origin: PERSON } as never)
+  expect(seen.runs.find(r => r.args[0] === 'decide' && r.args[2] === 'answer')!.args).toEqual(['decide', id, 'answer', '--note', 'cents', '--via', 'pane'])
+  await $.command.run({ command: 'gmod', args: `resolve ${id} not needed`, origin: PERSON } as never)
+  expect(seen.runs.find(r => r.args[0] === 'decide' && r.args[2] === 'resolve')!.args).toEqual(['decide', id, 'resolve', '--note', 'not needed', '--via', 'pane'])
+  expect((await $.command.run({ command: 'gmod', args: `resolve ${id}` } as never)).text).toContain('Only a person')
+})

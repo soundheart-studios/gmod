@@ -1,0 +1,5 @@
+# mod-ask: Agents ask from Claude Code; the pane shows requests
+
+- 2026-11-09T08:10:29.760Z check: red (mcp__gmod__ask raises a request and returns its id; the pane shows open requests; /gmod answer and /gmod resolve decide them as the person, and are refused for an agent)
+- 2026-11-09T08:11:30.380Z check: green
+- 2026-11-09T08:11:33.643Z dev@soundheart.io: The mod's notice used to be asked for only when some job had moved, so an answer would never have reached the agent. An `asked` atom now holds the request ids this session's agents raised; while any is out, every step asks gmod for a notice, and the 2-minute tick refreshes with a sync so the answer arrives. Ids leave the atom once the status no longer lists them as open. mcp__gmod__ask runs `gmod ask … --json` in the job's dir and tells the agent not to guess. /gmod answer <id> <text> and /gmod resolve <id> [why] run gmod decide … --via pane, person only. The pane draws a request as "? <job> asks: …", with its options and the two commands. The mod test runner refuses a dynamic import(), so the test imports lib/signals.mjs statically.
