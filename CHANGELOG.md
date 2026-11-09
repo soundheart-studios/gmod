@@ -2,6 +2,12 @@
 
 What each gmod release changes for you, with the details underneath.
 
+## 1.8.1 — 2026-11-09
+
+An agent's status tool costs about a tenth of what it did.
+
+- **`mcp__gmod__status` returns `gmod status --brief`:** the claimed job in full (its files, criteria, brief and ADRs), the open jobs and their stages, done jobs by id only, and each ADR they cite listed once by id and title. Before, every job carried the full text of every ADR covering it and its journal, so on a long plan the tool returned ~200 KB (~22k tokens); on gmod's own plan it's now ~7.5 KB. The pane, `gmod state` and apps like Skiff still read the full `gmod status`, which is unchanged. (#96)
+
 ## 1.8.0 — 2026-11-09
 
 Agents can ask you a question and get your answer back, you can set a stuck job aside or give it a new brief in one step, and an app like Skiff can set a repository up and check it with one call each. Everything works from the pane and the CLI too, and the protocol is still v1: only fields and commands were added. What each surface can rely on is in [docs/surfaces.md](docs/surfaces.md).
