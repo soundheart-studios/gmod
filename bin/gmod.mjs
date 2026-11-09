@@ -469,6 +469,12 @@ async function main() {
         : [];
       return out(flags, { ...r, published }, [`${action}: ${r.question} (by ${r.by}, via ${r.via})`, ...published].join('\n'));
     }
+    case 'rebrief': {
+      if (!args[0]) throw new core.GmodError('gmod rebrief <job> --note <new brief>');
+      const r = core.rebrief(root, args[0], flags.note, { via: flags.via ?? 'cli' });
+      const published = await publish(root, flags, `gmod/plan-${r.commit}`, r.sha);
+      return out(flags, { ...r, published }, [`rebriefed ${r.job} (commit ${r.commit}); its claim is let go`, ...published].join('\n'));
+    }
     case 'reject': {
       const r = core.reject(root, args.join(' '));
       return out(flags, r, `rejected: ${r.summary}${r.reason ? ` (${r.reason})` : ''}`);
