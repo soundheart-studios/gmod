@@ -35,7 +35,10 @@
     "decide": "node --test test/decide.test.mjs",
     "ci-pin-1-7-0": "grep -q \"uses: soundheart-studios/gmod@v1.7.0\" .github/workflows/gmod.yml",
     "empty-proposal": "node --test test/empty-proposal.test.mjs",
-    "decision-pr-title": "node --test test/decision-pr-title.test.mjs"
+    "decision-pr-title": "node --test test/decision-pr-title.test.mjs",
+    "test-signing": "node --import ./test/setup.mjs --test test/test-signing.test.mjs",
+    "setup-restart": "grep -qi 'restart Claude Code' docs/setup.md",
+    "release-branch": "node --test test/release-branch.test.mjs"
   },
   "jobs": [
     {
@@ -1084,6 +1087,120 @@
           "check": "decision-pr-title"
         }
       ]
+    },
+    {
+      "id": "pane-via",
+      "phase": "follow-ups",
+      "goal": "Decisions made in the pane say they came from the pane",
+      "brief": "Since 1.7 every decision commit carries Decided-Via; the pane's own calls to gmod approve, gmod reject and gmod adr accept|reject (hooks/register.tsx: the /gmod approve command around line 380, and the card buttons' decide() for the proposal and for ADR drafts) don't pass --via, so they record `cli`. Pass `--via pane` on those calls. Nothing else changes.",
+      "files": [
+        "hooks/register.tsx"
+      ],
+      "tests": [
+        "test/mod.test.tsx"
+      ],
+      "done_when": [
+        {
+          "text": "approving and accepting from the pane run gmod with --via pane",
+          "check": "mod"
+        }
+      ]
+    },
+    {
+      "id": "test-signing",
+      "phase": "follow-ups",
+      "goal": "Tests pass locally even with global commit signing on",
+      "brief": "Test repositories inherit the person's global git config; with commit.gpgsign on, gpg fails under the parallel suite (\"Cannot allocate memory\") and random tests fail locally (CI doesn't sign). Add test/setup.mjs, loaded by npm test with node --import, that turns signing off for every git the tests run through git's environment config (GIT_CONFIG_COUNT / GIT_CONFIG_KEY_n / GIT_CONFIG_VALUE_n: commit.gpgsign=false, tag.gpgsign=false), which overrides a repository's own config. Don't change how gmod itself signs anything.",
+      "files": [
+        "package.json",
+        "test/setup.mjs"
+      ],
+      "tests": [
+        "test/test-signing.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "under the test setup, a commit in a repository configured to sign with a failing gpg program still succeeds",
+          "check": "test-signing"
+        },
+        {
+          "text": "npm test loads the setup",
+          "check": "test-signing"
+        }
+      ]
+    },
+    {
+      "id": "hook-words",
+      "phase": "follow-ups",
+      "goal": "The hook refuses git and gmod commands, not text",
+      "files": [
+        "hooks/shell.ts",
+        "test/shell.test.ts"
+      ],
+      "tests": [
+        "test/shell.test.ts"
+      ],
+      "brief": "Seen in Skiff on 1.7.0: agents were refused for edits in their own job's files and then redid them with Edit. (a) movesClaims in hooks/shell.ts matches the whole command: any mention of the shared refs plus the word push, tag or replace anywhere is refused (a sed whose new text mentions them, a python heredoc about git ls-remote, even a script that only imports shell.ts). Read it like decision(): a git command (optionally -C dir) whose subcommand is update-ref, push, branch -D, tag or replace, with an argument under the shared refs, also through sh -c/eval as decision() does. (b) decision() still reads backticks and $(...) inside a quoted heredoc body, so a doc written with cat > a.md <<'EOF' that shows a decide command in backticks is refused; a quoted heredoc's body is text. An unquoted heredoc's $(...) does run, so it stays read, as does a shell reading the heredoc (sh <<EOF). Refusal wording unchanged.",
+      "done_when": [
+        {
+          "text": "text that mentions the shared refs with push, tag or replace (sed text, a heredoc, a comment, git ls-remote) runs; git push, update-ref, branch -D, tag or replace on them is still refused, also through sh -c",
+          "check": "mod"
+        },
+        {
+          "text": "backticks or $(...) naming a gmod decision inside a quoted heredoc body run; inside an unquoted heredoc or sh <<EOF they are still refused",
+          "check": "mod"
+        }
+      ]
+    },
+    {
+      "id": "mod-version",
+      "phase": "follow-ups",
+      "after": [
+        "pane-via"
+      ],
+      "goal": "The pane says to restart when gmod was upgraded",
+      "files": [
+        "hooks/register.tsx",
+        "hooks/version.ts",
+        "docs/setup.md",
+        "test/mod.test.tsx"
+      ],
+      "tests": [
+        "test/mod.test.tsx"
+      ],
+      "brief": "After the pin moved to 1.7.0, an open Claude Code session kept the 1.6.2 mod: the pane's approve said there was no proposal while gmod proposal (1.7) showed it, and its drafting tools couldn't see the proposal either. The mod compares its own version (its .claude-plugin/plugin.json) with the gmod CLI's (gmod version, once per session, best effort: no CLI or an error means no notice). When the CLI is newer, the pane shows 'gmod X is installed: restart Claude Code to load it', and a mod refusal that finds nothing to decide or edit (no proposal, no draft) adds the same line. docs/setup.md's upgrade steps end with restarting Claude Code. After pane-via since both change hooks/register.tsx.",
+      "done_when": [
+        {
+          "text": "with a newer gmod CLI than the mod, the pane and an empty /gmod approve say to restart Claude Code; with the same version, or no CLI, nothing is added",
+          "check": "mod"
+        },
+        {
+          "text": "docs/setup.md says to restart Claude Code after upgrading",
+          "check": "setup-restart"
+        }
+      ]
+    },
+    {
+      "id": "release-branch",
+      "phase": "follow-ups",
+      "goal": "A released job's branch doesn't block the next claim",
+      "files": [
+        "lib/core.mjs"
+      ],
+      "tests": [
+        "test/release-branch.test.mjs"
+      ],
+      "brief": "Seen in Skiff: an agent claimed decide-frames in its worktree, released it and stopped, leaving gmod/decide-frames checked out there. The next agent's claim worked but couldn't switch to the branch, so gmod commit pushed from worktree-agent-... and opened PR #51 from it. Fix both ends in lib/core.mjs: release, in a worktree on gmod/<job> with nothing uncommitted, switches it off the branch (to main's tip, detached in a linked worktree) and deletes the branch when it has no commits beyond main; with commits or uncommitted changes it leaves both and says so. claim, when gmod/<job> is checked out in another worktree, says which one and how to free it (gmod release there, or git worktree remove) instead of carrying on from the wrong branch.",
+      "done_when": [
+        {
+          "text": "after release in a clean worktree, the job's branch is no longer checked out there, and is deleted when it has no commits; a branch with commits or uncommitted work stays",
+          "check": "release-branch"
+        },
+        {
+          "text": "claiming a job whose branch is checked out in another worktree names that worktree and how to free it",
+          "check": "release-branch"
+        }
+      ]
     }
   ],
   "phases": [
@@ -1136,6 +1253,14 @@
       "id": "release-1-7",
       "title": "Release 1.7",
       "outcome": "gmod 1.7.0 is released once, with the whole contract, and this repository's CI runs it.",
+      "after": [
+        "surfaces"
+      ]
+    },
+    {
+      "id": "follow-ups",
+      "title": "1.7 follow-ups",
+      "outcome": "Small fixes to 1.7 from real use: pane decisions say they came from the pane, tests pass with signing on, the hook refuses commands not text, a stale mod says to restart, and a released branch frees the next claim.",
       "after": [
         "surfaces"
       ]
