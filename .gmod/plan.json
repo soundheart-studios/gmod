@@ -39,7 +39,9 @@
     "test-signing": "node --import ./test/setup.mjs --test test/test-signing.test.mjs",
     "setup-restart": "grep -qi 'restart Claude Code' docs/setup.md",
     "release-branch": "node --test test/release-branch.test.mjs",
-    "ci-pin-1-7-1": "grep -q \"uses: soundheart-studios/gmod@v1.7.1\" .github/workflows/gmod.yml"
+    "ci-pin-1-7-1": "grep -q \"uses: soundheart-studios/gmod@v1.7.1\" .github/workflows/gmod.yml",
+    "landed-proposal": "node --test test/landed-proposal.test.mjs",
+    "ci-pin-1-7-2": "grep -q \"uses: soundheart-studios/gmod@v1.7.2\" .github/workflows/gmod.yml"
   },
   "jobs": [
     {
@@ -1243,6 +1245,72 @@
           "check": "ci-pin-1-7-1"
         }
       ]
+    },
+    {
+      "id": "landed-proposal",
+      "phase": "landed-proposal",
+      "goal": "A landed proposal is dropped, never pushed back",
+      "brief": "Seen twice in Skiff on 1.7.1 (pane approve): after approving, refs/gmod/proposal came back locally and on origin, pointing at the very draft just approved (same sha), and the pane showed \"no changes\" with \".gmod/plan.json changed since this was drafted\". Reproduced: when a stale local copy of the approved draft is left behind (no tracking copy), the next sync's reconcile takes it for an offline edit and publishes it. Which process leaves the local copy isn't pinned down, so fix it from the data in lib/core.mjs: a proposal whose plan equals the plan on disk while its base is an older plan has landed. syncClaims drops it after reconciling (unpublish: here and on origin, refusing on a race as now), and proposal() treats it as absent, so the pane, signals and approve never show or act on it. A fresh or unchanged draft (base equal to the current plan) is untouched.",
+      "files": [
+        "lib/core.mjs"
+      ],
+      "tests": [
+        "test/landed-proposal.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "after an approve, a stale local copy of the approved draft is dropped by the next sync, here and on origin, instead of being pushed",
+          "check": "landed-proposal"
+        },
+        {
+          "text": "a landed proposal is not shown by gmod proposal or signals, while a draft against the current plan still is",
+          "check": "landed-proposal"
+        }
+      ]
+    },
+    {
+      "id": "release-1-7-2",
+      "phase": "landed-proposal",
+      "after": [
+        "landed-proposal"
+      ],
+      "goal": "Release gmod 1.7.2 with the landed-proposal fix",
+      "brief": "Bump to 1.7.2 as release-1-7-1 did: npm version 1.7.2 --no-git-tag-version, plugin.json by hand, test/release.test.mjs at 1.7.2, CHANGELOG.md 1.7.2 entry above 1.7.1. After landing: tag v1.7.2, publish the GitHub release, move ~/.local/bin/gmod and ~/.claude/settings.json.",
+      "files": [
+        "package.json",
+        "package-lock.json",
+        ".claude-plugin/plugin.json",
+        "CHANGELOG.md",
+        "test/release.test.mjs"
+      ],
+      "tests": [
+        "test/release.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "package.json, package-lock.json and plugin.json all say 1.7.2, and CHANGELOG.md has a 1.7.2 entry",
+          "check": "release"
+        }
+      ]
+    },
+    {
+      "id": "ci-gmod-1-7-2",
+      "phase": "landed-proposal",
+      "after": [
+        "release-1-7-2"
+      ],
+      "goal": "CI runs gmod 1.7.2 instead of 1.7.1",
+      "brief": "Change `uses: soundheart-studios/gmod@v1.7.1` to `@v1.7.2` in .github/workflows/gmod.yml, nothing else, after v1.7.2 is tagged.",
+      "files": [
+        ".github/workflows/gmod.yml"
+      ],
+      "tests": [],
+      "done_when": [
+        {
+          "text": "the gmod workflow uses soundheart-studios/gmod@v1.7.2",
+          "check": "ci-pin-1-7-2"
+        }
+      ]
     }
   ],
   "phases": [
@@ -1313,6 +1381,14 @@
       "outcome": "gmod 1.7.1 is released with the five follow-up fixes, and CI runs it.",
       "after": [
         "follow-ups"
+      ]
+    },
+    {
+      "id": "landed-proposal",
+      "title": "Landed proposals",
+      "outcome": "An approved proposal never comes back as a stale \"no changes\" card, and 1.7.2 ships the fix.",
+      "after": [
+        "release-1-7-1"
       ]
     }
   ]
