@@ -118,7 +118,7 @@ const HELP = `gmod: planned work with proof, on plain git
                                   up to date after a merge are checked again
   gmod ci check [--token-file <f>] [--url <u>]
                                   is the workflow, protection, runner and reviewer in place?
-  gmod status                     everything above, as JSON
+  gmod status [--brief]           everything above, as JSON; --brief: the claim and open jobs only
 
   Gitea: the token is --token-file, GITEA_TOKEN, or ~/.config/gmod/gitea-token; the web
   address over ssh is --url, or once per host: git config --global gmod.<host>.url <url>
@@ -131,7 +131,7 @@ function parse(argv) {
     const a = argv[i];
     if (!a.startsWith('--')) rest.push(a);
     else if (a === '--version') rest.unshift('version');
-    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr', '--advice', '--no-wait', '--candidates', '--resume', '--app', '--all', '--managed', '--yes'].includes(a)) flags[a.slice(2)] = true;
+    else if (['--json', '--allow-plan', '--no-branch', '--no-sync', '--shell', '--run', '--no-fetch', '--blocking', '--force', '--code-owners', '--auto', '--require-review', '--status', '--no-push', '--no-pr', '--advice', '--no-wait', '--candidates', '--resume', '--app', '--all', '--managed', '--yes', '--brief'].includes(a)) flags[a.slice(2)] = true;
     else if (a === '--trailer') (flags.trailer ??= []).push(argv[++i]);
     else flags[a.slice(2)] = argv[++i];
   }
@@ -522,8 +522,10 @@ async function main() {
       const r = core.sweep(root);
       return out(flags, r, r.length ? `released ${r.join(', ')}` : 'no claims on finished jobs');
     }
-    case 'status':
-      return out({ json: true }, core.status(root, { sync: !flags['no-sync'] }));
+    case 'status': {
+      const s = core.status(root, { sync: !flags['no-sync'] });
+      return out({ json: true }, flags.brief ? core.statusBrief(s) : s);
+    }
     default:
       throw new core.GmodError(`unknown command ${cmd}\n\n${HELP}`);
   }

@@ -227,7 +227,7 @@ export const register: Register = on => {
     await $.tool.register({ name: 'commit', description: 'Finish the claimed job: commit exactly what the last passing check ran on, as "<job>: <message>", push its branch, and open its pull request, which lands by itself once CI passes. Refused until the check failed first and then passed on these very files.', inputSchema: { type: 'object', properties: { message: { type: 'string', description: 'What the work does, in a few words; "<job>: " is added' }, trailers: { type: 'array', items: { type: 'string' }, description: 'Lines for the end of the message, e.g. Co-Authored-By' }, ...DIR }, required: ['message'] }, isDeferred: false })
     await $.tool.register({ name: 'pr_status', description: "How the claimed job's pull request is doing: its checks, and the gate's and the AI review's reports.", inputSchema: { type: 'object', properties: DIR }, isDeferred: false })
     await $.tool.register({ name: 'release', description: 'Let go of the claimed job, for example to hand it back unfinished.', inputSchema: { type: 'object', properties: DIR }, isDeferred: false })
-    await $.tool.register({ name: 'status', description: 'The claimed job, its allowed files, its criteria, the recorded runs, every job\'s stage, and any drafted plan change.', inputSchema: { type: 'object', properties: DIR }, isDeferred: false })
+    await $.tool.register({ name: 'status', description: 'The claimed job, its allowed files, its criteria, the recorded runs, the open jobs\' stages (done ones by id), and any drafted plan change.', inputSchema: { type: 'object', properties: DIR }, isDeferred: false })
     await $.tool.register({ name: 'propose_job', description: 'Draft a new job, or replace one, in the plan proposal. The person sees the draft in the gmod pane and approves it there or with /gmod approve. Keep jobs small: one reviewable pull request each.', inputSchema: { type: 'object', properties: { job: JOB, checks: CHECKS }, required: ['job'] }, isDeferred: false })
     await $.tool.register({ name: 'edit_job', description: 'Change fields of a job in the plan proposal (goal, brief, files, tests, done_when, after).', inputSchema: { type: 'object', properties: { id: { type: 'string' }, changes: { type: 'object' }, checks: CHECKS }, required: ['id', 'changes'] }, isDeferred: false })
     await $.tool.register({ name: 'drop_job', description: 'Take a job out of the plan proposal, saying why. Done or claimed jobs stay.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, reason: { type: 'string' } }, required: ['id'] }, isDeferred: false })
@@ -281,7 +281,7 @@ export const register: Register = on => {
     return { result: text(r) }
   })
   on('tool.call', { tool: 'mcp__gmod__status' }, async ($, e) => {
-    const r = await gmod($, ['status', '--no-sync'], arg(e, 'dir'))
+    const r = await gmod($, ['status', '--no-sync', '--brief'], arg(e, 'dir'))
     if (!arg(e, 'dir')) await refresh($)
     return { result: r.stdout.trim() }
   })
