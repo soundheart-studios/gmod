@@ -26,6 +26,16 @@ It protects `main`, writes the CI file and `.gmod/protect.json`, and lands them 
 
 Afterwards, `gmod doctor` checks everything is still in place (each ✗ comes with its fix), and `gmod ci upgrade` opens a pull request that moves the pinned gmod to the newest release.
 
+## Upgrading
+
+Upgrading gmod on your machine takes three steps:
+
+1. Install the new release.
+2. Move the pins to it: the `gmod` on your PATH, and the mod's folder in Claude Code's settings (`CLAUDE_CODE_PLUGIN_DIRS`).
+3. Restart Claude Code. A session keeps the mod it started with, and that mod runs its own copy of gmod, so until you restart the pane and `/gmod` behave like the old release. Until then the pane says `gmod X is installed: restart Claude Code to load it`.
+
+`gmod ci upgrade` moves CI's pin.
+
 ## What CI does
 
 ![What CI does: the gate, always on; the review, optional, any model; agents, optional, Claude on an Anthropic API key](assets/gmod-ci.png)
