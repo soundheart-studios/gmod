@@ -1,0 +1,54 @@
+{
+  "forge": {
+    "kind": "github",
+    "host": "github.com",
+    "owner": "o",
+    "repo": "r",
+    "web": "https://github.com",
+    "api": "https://api.github.com"
+  },
+  "ok": false,
+  "steps": [
+    {
+      "id": "protect",
+      "status": "done",
+      "detail": "main protected: gate required on up-to-date branches, pull requests only",
+      "ok": true,
+      "msg": "main protected: gate required on up-to-date branches, pull requests only"
+    },
+    {
+      "id": "plan",
+      "status": "done",
+      "detail": "a starter .gmod/plan.json (no jobs yet) goes in setup's pull request",
+      "ok": true,
+      "msg": "a starter .gmod/plan.json (no jobs yet) goes in setup's pull request"
+    },
+    {
+      "id": "pr",
+      "status": "done",
+      "detail": "governance pull request: https://github.com/o/r/pull/1 (.github/workflows/gmod.yml, .gmod/protect.json, .gmod/plan.json, .gmod/managed.json)",
+      "ok": true,
+      "msg": "governance pull request: https://github.com/o/r/pull/1 (.github/workflows/gmod.yml, .gmod/protect.json, .gmod/plan.json, .gmod/managed.json)"
+    },
+    {
+      "id": "managed",
+      "status": "done",
+      "detail": "managed mode on, in setup's pull request",
+      "ok": true,
+      "msg": "managed mode on, in setup's pull request"
+    },
+    {
+      "id": "reviewer-key",
+      "status": "skipped",
+      "detail": "the reviewer's key isn't set yet: gh secret set GMOD_REVIEW_KEY --repo o/r",
+      "ok": false,
+      "msg": "the reviewer's key isn't set yet: gh secret set GMOD_REVIEW_KEY --repo o/r"
+    }
+  ],
+  "pr": {
+    "url": "https://github.com/o/r/pull/1"
+  },
+  "left": [
+    "add GMOD_REVIEW_KEY as a repository secret: gh secret set GMOD_REVIEW_KEY --repo o/r"
+  ]
+}
