@@ -1,0 +1,5 @@
+# doctor-json: Doctor reports exactly what is set up, as JSON
+
+- 2026-11-09T08:55:54.615Z check: red (doctor --json gives one check each for plan, managed, workflow pin, runner, reviewer, protection and installed version, each ok, missing or differs with a one-line fix)
+- 2026-11-09T08:59:35.769Z check: green
+- 2026-11-09T08:59:42.281Z dev@soundheart.io: doctor() on every forge keeps its findings and now also returns `checks`: plan, managed, workflow, runner, reviewer, protection, installed, each {id, status: ok|missing|differs, detail, fix when not ok}. Plan, managed, the workflow pin (any `gmod@<ref>` in the forge's CI file) and the installed version are read the same way everywhere. Runner, reviewer and protection come from `facts` that each forge's doctor records as it goes: GitHub has all three; Gitea and GitLab have protection only, so runner and reviewer there are 'missing' with "gmod doctor can't tell this on <forge> yet". The GitHub doctor looks up the latest release once and shares it. The CLI's --json already prints the whole result, so bin/gmod.mjs is unchanged.
