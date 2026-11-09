@@ -27,6 +27,11 @@ const cardOpen = atom({ plugin: 'gmod', key: 'cardOpen' } as const, null)
 const showAssumptions = atom({ plugin: 'gmod', key: 'showAssumptions' } as const, false)
 // Set at session start when a newer gmod is installed than this mod.
 const upgrade = atom({ plugin: 'gmod', key: 'upgrade' } as const, null as string | null)
+// Requests this session's agents asked that may still be answered: while any
+// is out, each step asks gmod for a notice, so the answer reaches the agent.
+const asked = atom({ plugin: 'gmod', key: 'asked' } as const, [] as string[])
+type GmodRequest = { id: string; job: string; question: string; options?: string[] }
+const openRequests = (s: GmodStatus | null) => ((s as { requests?: GmodRequest[] } | null)?.requests ?? [])
 // Phases the person folded or unfolded; the rest follow where the work is.
 const phaseOpen = atom({ plugin: 'gmod', key: 'phaseOpen' } as const, {})
 
@@ -111,8 +116,14 @@ const MOVED_LEVELS = ['touched', 'conflicts', 'breaks']
 async function withNotice<R extends ToolCallResult>($: EngineInterface, ran: R, path: string): Promise<R> {
   if (ran.deny !== undefined || !path) return ran
   const s = await read($, status)
-  if (!(s?.jobs ?? []).some(j => j.moved && MOVED_LEVELS.includes(j.moved.level))) return ran
+  const out = await read($, asked)
+  if (!out.length && !(s?.jobs ?? []).some(j => j.moved && MOVED_LEVELS.includes(j.moved.level))) return ran
   const said = (await gmod($, ['notice', path])).stdout.trim()
+  // Asked and no longer open: answered or resolved, and now told.
+  if (out.length) {
+    const open = new Set(openRequests(s).map(r => r.id))
+    await update($, asked, ids => ids.filter(id => open.has(id)))
+  }
   return said ? { ...ran, context: [...(ran.context ?? []), said] } : ran
 }
 
@@ -223,6 +234,7 @@ export const register: Register = on => {
     await $.tool.register({ name: 'propose_phase', description: 'Draft a phase, or replace one: a group of jobs with an outcome, ordered after other phases. Put jobs in it with their "phase" field. A plan with phases needs every job in one before the person can approve it.', inputSchema: { type: 'object', properties: { phase: PHASE }, required: ['phase'] }, isDeferred: false })
     await $.tool.register({ name: 'edit_phase', description: "Change a phase's title, outcome or after in the plan proposal.", inputSchema: { type: 'object', properties: { id: { type: 'string' }, changes: { type: 'object' } }, required: ['id', 'changes'] }, isDeferred: false })
     await $.tool.register({ name: 'drop_phase', description: 'Take an empty phase out of the plan proposal, saying why. Move or drop its jobs first.', inputSchema: { type: 'object', properties: { id: { type: 'string' }, reason: { type: 'string' } }, required: ['id'] }, isDeferred: false })
+    await $.tool.register({ name: 'ask', description: "Ask the person a question about the claimed job, when you can't go on well without their answer (a choice only they can make, something missing from the brief). They see it in the gmod pane and in Skiff; their answer reaches you on a later step. Give options when the answer is one of a few.", inputSchema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' }, description: 'The answers to choose from, when there are a few' }, ...DIR }, required: ['question'] }, isDeferred: false })
     await $.tool.register({ name: 'note', description: "Add a line to the claimed job's journal (.gmod/journal/<job>.md), which goes into its pull request for the reviewer: what you're about to try and why, a decision you made, a dead end and what you learned. Checks add red/green there by themselves.", inputSchema: { type: 'object', properties: { text: { type: 'string' }, ...DIR }, required: ['text'] }, isDeferred: false })
     await $.tool.register({ name: 'adr_propose', description: 'Draft an architecture decision record: a decision agents must follow from now on. Give it a short title, the scope (globs of the files it governs; empty for the whole repository), the context, the decision, and its rules, each {level: "must" | "should", text}. The person accepts it; then it binds every job whose files it covers, and CI holds pull requests to it.', inputSchema: { type: 'object', properties: { title: { type: 'string' }, scope: { type: 'array', items: { type: 'string' } }, context: { type: 'string' }, decision: { type: 'string' }, rules: { type: 'array', items: { type: 'object', properties: { level: { type: 'string', enum: ['must', 'should'] }, text: { type: 'string' } }, required: ['level', 'text'] } }, supersedes: { type: 'string', description: 'The id of an ADR this one replaces, e.g. 0003' } }, required: ['title', 'decision', 'rules'] }, isDeferred: false })
     await $.tool.register({ name: 'describe_proposal', description: 'Say what the plan proposal is for, in one short plain sentence (under 25 words) a non-engineer understands, and list the assumptions the person is really approving (choices you made that they might not have). Shown at the top of the proposal card.', inputSchema: { type: 'object', properties: { summary: { type: 'string' }, assumptions: { type: 'array', items: { type: 'string' } } } }, isDeferred: false })
@@ -233,7 +245,8 @@ export const register: Register = on => {
     // touched, on its work merged onto the new main.
     if (s?.governed) $.clock.every(MOVED_EVERY, async () => {
       await gmod($, ['moved', '--run', '--json'])
-      await refresh($)
+      // A question out: bring its answer here too.
+      await refresh($, (await read($, asked)).length > 0)
     })
     return next(e)
   })
@@ -313,6 +326,16 @@ export const register: Register = on => {
     const r = await gmod($, ['note', arg(e, 'text')], arg(e, 'dir'))
     await refresh($)
     return r.exitCode === 0 ? { result: text(r) } : { deny: text(r) }
+  })
+  on('tool.call', { tool: 'mcp__gmod__ask' }, async ($, e) => {
+    const options = (e as unknown as { options?: unknown }).options
+    const r = await gmod($, ['ask', arg(e, 'question'), ...(Array.isArray(options) && options.length ? ['--options', JSON.stringify(options)] : []), '--json'], arg(e, 'dir'))
+    if (r.exitCode !== 0) return { deny: text(r) }
+    let id = ''
+    try { id = (JSON.parse(r.stdout) as { id: string }).id } catch {}
+    if (id) await update($, asked, ids => [...ids.filter(x => x !== id), id])
+    await refresh($)
+    return { result: `Asked the person (request ${id}). Their answer reaches you on a later step as a gmod notice; until then carry on with what doesn't depend on it, and don't guess the answer.` }
   })
   on('tool.call', { tool: 'mcp__gmod__adr_propose' }, async ($, e) => {
     const draft = Object.fromEntries(['title', 'scope', 'context', 'decision', 'rules', 'supersedes'].map(k => [k, (e as unknown as Record<string, unknown>)[k]]).filter(([, v]) => v !== undefined))
@@ -409,6 +432,19 @@ export const register: Register = on => {
         await refresh($)
         return { text: text(r), context: r.exitCode === 0 ? [`The person rejected the plan proposal${rest.length ? `: "${rest.join(' ')}"` : ''}. Ask what they want instead before drafting again.`] : undefined }
       }
+      case 'answer':
+      case 'resolve': {
+        if (!isPerson) return { text: `Only a person at the prompt can ${sub} an agent's request.` }
+        const [id = '', ...words] = rest
+        const note = words.join(' ')
+        if (!id || (sub === 'answer' && !note)) return { text: sub === 'answer' ? 'Usage: /gmod answer <request> <your answer>' : 'Usage: /gmod resolve <request> [why]' }
+        const r = await gmod($, ['decide', id, sub, ...(note ? ['--note', note] : []), '--via', 'pane'])
+        await refresh($)
+        return {
+          text: text(r),
+          context: r.exitCode === 0 ? [sub === 'answer' ? `The person answered request ${id}: "${note}". The agent that asked hears it on its next step.` : `The person resolved request ${id} without an answer${note ? `: "${note}"` : ''}.`] : undefined,
+        }
+      }
       case 'adr': {
         const [what = 'drafts', ...more] = rest
         if (['accept', 'reject'].includes(what) && !isPerson) return { text: `Only a person at the prompt can ${what} a decision.` }
@@ -437,7 +473,7 @@ export const register: Register = on => {
         return { text: text(r) }
       }
       default:
-        return { text: 'Usage: /gmod [plan | next | claim <job> | check | release | proposal | approve | reject [why] | adr [drafts | list | accept <draft> | reject <draft> [why]] | allow-plan | lock-plan | sweep]' }
+        return { text: 'Usage: /gmod [plan | next | claim <job> | check | release | proposal | approve | reject [why] | answer <request> <text> | resolve <request> [why] | adr [drafts | list | accept <draft> | reject <draft> [why]] | allow-plan | lock-plan | sweep]' }
     }
   })
 
@@ -821,10 +857,21 @@ export const register: Register = on => {
         </Box>
       )
     }
+    // An agent's question: what it asks, its options, and how to answer.
+    function requestLine(sig: Signal) {
+      return (
+        <Box key={`request${sig.id}`} flexDirection="column">
+          <Text color="cyan" wrap="wrap">{`? ${sig.question}`}</Text>
+          {sig.detail && <Text dimColor wrap="wrap">{sig.detail}</Text>}
+          <Text dimColor wrap="wrap">{`/gmod answer ${sig.id} <answer> · /gmod resolve ${sig.id}`}</Text>
+        </Box>
+      )
+    }
     function needLine(sig: Signal) {
       const c = sig.cause
       if (typeof c.proposal === 'string') return p ? card(p) : null
       if (typeof c.adr === 'string') return adrLine(sig, c.adr)
+      if (typeof c.request === 'string') return requestLine(sig)
       const key = typeof c.stuck === 'string' ? `stall${c.stuck}` : `moved${String(c.moved)}`
       return (
         <Text key={key} color="red" wrap="wrap">
