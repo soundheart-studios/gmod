@@ -2,6 +2,27 @@
 
 What each gmod release changes for you, with the details underneath.
 
+## 1.8.0 — 2026-11-09
+
+Agents can ask you a question and get your answer back, you can set a stuck job aside or give it a new brief in one step, and an app like Skiff can set a repository up and check it with one call each. Everything works from the pane and the CLI too, and the protocol is still v1: only fields and commands were added. What each surface can rely on is in [docs/surfaces.md](docs/surfaces.md).
+
+### Agents ask, you answer
+
+- **An agent asks you about its job with `mcp__gmod__ask`, or `gmod ask <question> [--options '<json list>']`.** The question shows under Needs you in the pane, in `gmod signals` and in Skiff, the same on every clone (it lives at `refs/gmod/requests/<id>`). (#86)
+- **You answer with `/gmod answer <id> <answer>` in the pane, or `gmod decide <id> answer --note <text>`,** or close it without an answer with `resolve`. When the agent gave options, the answer is one of them. Only a person answers. (#86, #87)
+- **The agent hears your answer on its next step,** once. The answer stays readable with `gmod requests --all` (who answered and when) until the job is done, so a fresh agent on the job can read it too. (#86, #87)
+
+### Stuck jobs
+
+- **Set a red job's alert aside with `resolve`:** you fixed it by hand, or you know. It stays hidden on every clone until the job is red again on a new run, or main moves under it again. (#88)
+- **Give a stuck job a new brief with `gmod decide <id> rebrief --note <brief>`.** It's your decision, committed on its own like an approve, with no proposal, and the job's claim is let go so the next worker starts from the new brief. It's refused for a job already done, and while a pending proposal changes the same job; the refusal says which proposal. (#89)
+
+### Set up and check, as JSON
+
+- **`gmod setup --json` is one call from an app like Skiff.** It adds a starter plan when main has none, and prints each step (done, skipped or failed), its pull request, and what's left for you, such as a secret to add. `--managed` turns managed mode on too: in setup's own pull request on a new repository, as its own decision on a governed one. Like `gmod manage on`, only a person can: it's refused under an agent, and without a terminal it needs `--yes`. (#90)
+- **`gmod doctor --json` says exactly what's set up:** the plan, managed mode, the workflow and its gmod pin, the runner, the reviewer, main's protection and the installed gmod, each ok, missing or differs, with a one-line fix. (#91)
+- **Recorded outputs for apps** are in `test/fixtures/v1/`, and the tests fail when what gmod prints drifts from them. `gmod capabilities` lists `ask`, `requests`, `setup` and `doctor`. (#92)
+
 ## 1.7.2 — 2026-11-08
 
 An approved plan change no longer comes back as a stale "no changes" card.
