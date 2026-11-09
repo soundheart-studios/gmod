@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { GmodJob, GmodPhase, GmodProposal, GmodStatus } from '../types'
+import { upgradeNotice } from './version'
 import { commitDirs, commitsAlone, decision, mergesPr, movesClaims, resolveDir, writesPlan, writesRecords } from './shell'
 // @ts-ignore: plain JavaScript, shared with the gmod command (gmod signals)
 import { paneLine as paneLineJs, signalsFrom as signalsFromJs } from '../lib/signals.mjs'
@@ -24,6 +25,8 @@ const open = atom({ plugin: 'gmod', key: 'open' } as const, null)
 const asking = atom({ plugin: 'gmod', key: 'asking' } as const, false)
 const cardOpen = atom({ plugin: 'gmod', key: 'cardOpen' } as const, null)
 const showAssumptions = atom({ plugin: 'gmod', key: 'showAssumptions' } as const, false)
+// Set at session start when a newer gmod is installed than this mod.
+const upgrade = atom({ plugin: 'gmod', key: 'upgrade' } as const, null as string | null)
 // Phases the person folded or unfolded; the rest follow where the work is.
 const phaseOpen = atom({ plugin: 'gmod', key: 'phaseOpen' } as const, {})
 
@@ -50,7 +53,23 @@ type Run = { exitCode: number; stdout: string; stderr: string }
 
 async function gmod($: EngineInterface, args: string[], dir?: string): Promise<Run> {
   const cwd = dir || (await $.session.cwd())
-  return $.process.run(['node', `${$.plugin.root}/bin/gmod.mjs`, ...args], { cwd, timeoutMs: 10 * 60_000 })
+  const r = await $.process.run(['node', `${$.plugin.root}/bin/gmod.mjs`, ...args], { cwd, timeoutMs: 10 * 60_000 })
+  // Refused by an older gmod than the one installed: the likely cause.
+  const notice = r.exitCode === 0 ? null : await read($, upgrade)
+  return notice ? { ...r, stderr: `${r.stderr.trim()}\n${notice}` } : r
+}
+
+// Whether a newer gmod is installed than this mod (best effort).
+async function checkUpgrade($: EngineInterface): Promise<void> {
+  try {
+    const cwd = await $.session.cwd()
+    const mod = await $.process.run(['node', `${$.plugin.root}/bin/gmod.mjs`, 'version'], { cwd, timeoutMs: 10_000 })
+    const cli = await $.process.run(['sh', '-c', 'gmod version'], { cwd, timeoutMs: 10_000 })
+    const notice = mod.exitCode === 0 && cli.exitCode === 0 ? upgradeNotice(mod.stdout, cli.stdout) : null
+    await update($, upgrade, () => notice)
+  } catch {
+    /* no notice */
+  }
 }
 
 async function refresh($: EngineInterface, sync = false): Promise<GmodStatus | null> {
@@ -207,6 +226,7 @@ export const register: Register = on => {
     await $.tool.register({ name: 'note', description: "Add a line to the claimed job's journal (.gmod/journal/<job>.md), which goes into its pull request for the reviewer: what you're about to try and why, a decision you made, a dead end and what you learned. Checks add red/green there by themselves.", inputSchema: { type: 'object', properties: { text: { type: 'string' }, ...DIR }, required: ['text'] }, isDeferred: false })
     await $.tool.register({ name: 'adr_propose', description: 'Draft an architecture decision record: a decision agents must follow from now on. Give it a short title, the scope (globs of the files it governs; empty for the whole repository), the context, the decision, and its rules, each {level: "must" | "should", text}. The person accepts it; then it binds every job whose files it covers, and CI holds pull requests to it.', inputSchema: { type: 'object', properties: { title: { type: 'string' }, scope: { type: 'array', items: { type: 'string' } }, context: { type: 'string' }, decision: { type: 'string' }, rules: { type: 'array', items: { type: 'object', properties: { level: { type: 'string', enum: ['must', 'should'] }, text: { type: 'string' } }, required: ['level', 'text'] } }, supersedes: { type: 'string', description: 'The id of an ADR this one replaces, e.g. 0003' } }, required: ['title', 'decision', 'rules'] }, isDeferred: false })
     await $.tool.register({ name: 'describe_proposal', description: 'Say what the plan proposal is for, in one short plain sentence (under 25 words) a non-engineer understands, and list the assumptions the person is really approving (choices you made that they might not have). Shown at the top of the proposal card.', inputSchema: { type: 'object', properties: { summary: { type: 'string' }, assumptions: { type: 'array', items: { type: 'string' } } } }, isDeferred: false })
+    await checkUpgrade($)
     const s = await refresh($, true)
     if ((s?.governed || s?.proposal) && (await $.session.surfaces()).length) void $.ui.open({ id: PANE, title: 'gmod' })
     // Every two minutes: fetch main, and run the checks of any job a landing
@@ -452,12 +472,14 @@ export const register: Register = on => {
     // Every surface but mobile takes typed input.
     const Input = 'Input' in els ? els.Input : undefined
     const s = await read($, status)
+    const notice = await read($, upgrade)
     const cut = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1)}…` : t)
 
     if (!s?.governed && !s?.proposal) {
       return (
         <Box flexDirection="column">
           <Text bold>gmod</Text>
+          {notice && <Text color="yellow">{notice}</Text>}
           <Text dimColor>{s?.error ? s.error : 'No plan here yet.'}</Text>
           <Text dimColor>Start one with /gmod:plan and say what you want built.</Text>
         </Box>
@@ -819,6 +841,7 @@ export const register: Register = on => {
             {'  '}{done} of {jobs.length} done{moving ? ` · ${moving} in progress` : ''}{waiting ? ` · ${waiting} waiting` : ''}
           </Text>
         </Text>
+        {notice && <Text color="yellow">{notice}</Text>}
 
         {needs && (
           <Box flexDirection="column" marginTop={1}>
