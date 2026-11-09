@@ -4,6 +4,7 @@
 
 - **A test proves the code does what the test says, not that the test asks the right thing.** Whoever writes the code, a person or an agent, also writes its test. The gate proves the test depends on the change; only the AI review, and you, judge whether it's the right test.
 - **Reviews are as good as the model.** Smaller models fail good work more often, and may pass weak work. `gmod-override` is for the first; for the second, read what lands, and prefer a stronger reviewer for code that matters.
+- **`gmod decide` keeps decisions a person's, against habit, not against intent.** It refuses under gmod's agent identity and under an agent's environment (Claude Code, Codex, pi, CI), asks for the signal's id typed back in a terminal, and records `Decided-By` and `Decided-Via` on every decision commit. A program running as you that clears its environment can still pass, and the trailers say only what it claimed. Inside Claude Code the mod refuses it outright; everywhere, the decision lands as a pull request of its own that the owners review.
 - **Agents in CI can be steered by what they read.** They read the repository, the plan, and `@gmod` comments from people who can write to it. They can't change the plan, the rules or CI, and everything they write passes the same gate and review, but treat a repository with untrusted content accordingly.
 
 ## Public repositories and forks

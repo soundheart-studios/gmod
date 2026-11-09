@@ -50,7 +50,7 @@ export function decidesPlan(cmd: string): boolean {
 }
 
 // Which of a person's decisions a command makes: 'plan' for gmod approve,
-// reject and adr accept|reject, 'managed' for gmod manage on|off, null for
+// reject, decide and adr accept|reject, 'managed' for gmod manage on|off, null for
 // none. Read word by word, so a quoted mention (grep, echo, a commit message)
 // is text, not a command; `gmod manage` and `gmod manage status` only read.
 // Text run through sh -c, eval, xargs, $(…) and the like is read too.
@@ -79,7 +79,7 @@ const LAUNCHERS = ['node', 'npx', 'bun', 'bunx', 'deno', 'tsx', 'pnpx']
 const SHELLS = ['sh', 'bash', 'zsh', 'dash', 'ksh']
 // What a command says once nothing tells it apart from text: a shell reading
 // its commands from a pipe.
-const SAYS_PLAN = /\bgmod(?:\.mjs)?['"]?\s+(?:adr\s+)?(?:approve|reject|accept)\b/
+const SAYS_PLAN = /\bgmod(?:\.mjs)?['"]?\s+(?:(?:adr\s+)?(?:approve|reject|accept)|decide)\b/
 const SAYS_MANAGED = /\bgmod(?:\.mjs)?['"]?\s+manage\s+['"]?(?:on|off)\b/
 
 function either(a: Decision | null, b: Decision | null): Decision | null {
@@ -122,7 +122,9 @@ function commandDecision(words: string[], depth: number): Decision | null {
     rest = args.slice(at + 1)
   } else return null
   const [sub, how] = rest.filter(a => !a.startsWith('-'))
-  if (sub === 'approve' || sub === 'reject') return 'plan'
+  // gmod decide <signal-id> <action>: every surface's way to approve, reject,
+  // ask for changes or accept, so the same person's decision as approve.
+  if (sub === 'approve' || sub === 'reject' || sub === 'decide') return 'plan'
   if (sub === 'adr' && (how === 'accept' || how === 'reject')) return 'plan'
   if (sub === 'manage' && (how === 'on' || how === 'off')) return 'managed'
   return null

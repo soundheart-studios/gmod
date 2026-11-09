@@ -12,6 +12,8 @@ import * as signalsLib from '../lib/signals.mjs';
 import * as capsLib from '../lib/capabilities.mjs';
 import * as managedLib from '../lib/managed.mjs';
 import * as stampLib from '../lib/stamp.mjs';
+import * as decideLib from '../lib/decide.mjs';
+import { createInterface } from 'node:readline/promises';
 import { readFileSync as readSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -47,6 +49,9 @@ const HELP = `gmod: planned work with proof, on plain git
                                   say what the draft is for, and what it assumes
   gmod approve                    a person's yes: commit the draft as the plan
   gmod reject [reason]            a person's no: drop the draft
+  gmod decide <signal-id> <action> [--rev r] [--note text] [--via surface]
+                                  a person's decision on a signal, from any surface: approve,
+                                  ask-changes or reject a proposal; accept or reject an ADR draft
   gmod manage [on | off | status] managed mode (.gmod/managed.json, off by default): a person's
                                   decision, committed alone; with no argument, whether it is on
   gmod prove <job> --base <ref> [--head <ref>]
@@ -298,7 +303,7 @@ async function main() {
       return out(flags, { managed }, `managed mode is ${managed ? 'on' : 'off'} (${managedLib.MANAGED}${managed ? '' : ': missing or managed: false'})`);
     }
     if (how !== 'on' && how !== 'off') throw new core.GmodError('gmod manage [on | off | status]');
-    const r = managedLib.setManaged(root, how === 'on');
+    const r = managedLib.setManaged(root, how === 'on', { via: flags.via ?? 'cli' });
     if (r.unchanged) return out(flags, r, `managed mode is already ${how}`);
     const lines = await publish(root, flags, `gmod/managed-${how}-${r.commit}`, r.sha);
     return out(flags, { ...r, published: lines }, [`managed mode ${how} (commit ${r.commit} on ${r.branch || 'a detached HEAD'})`, ...lines].join('\n'));
@@ -374,6 +379,7 @@ async function main() {
       return r.ok ? 0 : 1;
     }
     case 'proposal': {
+      if (!flags['no-sync']) core.syncClaims(root);
       const p = core.status(root).proposal;
       if (!p) return out(flags, null, 'no proposal');
       const d = p.diff;
@@ -420,9 +426,27 @@ async function main() {
       return out(flags, r, `drafted: ${core.describeDiff(r.diff)}`);
     }
     case 'approve': {
-      const r = core.approve(root);
+      const r = core.approve(root, { via: flags.via ?? 'cli' });
       const lines = await publish(root, flags, `gmod/plan-${r.commit}`, r.sha);
       return out(flags, { ...r, published: lines }, [`approved: ${r.summary} (commit ${r.commit} on ${r.branch || 'a detached HEAD'})`, ...lines].join('\n'));
+    }
+    case 'decide': {
+      const [id, action] = args;
+      if (!id || !action) throw new core.GmodError('gmod decide <signal-id> <action> [--rev <rev>] [--note <text>] [--via <surface>] [--json]');
+      const tty = !!(process.stdin.isTTY && process.stdout.isTTY);
+      const confirm = async s => {
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        try {
+          const typed = await rl.question(`${s.question}\n${action}? Type ${s.id} to confirm: `);
+          return typed.trim() === s.id;
+        } finally { rl.close(); }
+      };
+      const r = await decideLib.decide(root, id, action, { rev: flags.rev, note: flags.note, via: flags.via, tty, confirm });
+      if (!r.decided) return out(flags, r, `not a decision: ${r.hint}`);
+      const published = r.result?.sha && !flags['no-pr']
+        ? await publish(root, flags, r.result.id ? `gmod/adr-${r.result.id}` : `gmod/plan-${r.result.commit}`, r.result.sha)
+        : [];
+      return out(flags, { ...r, published }, [`${action}: ${r.question} (by ${r.by}, via ${r.via})`, ...published].join('\n'));
     }
     case 'reject': {
       const r = core.reject(root, args.join(' '));
@@ -481,7 +505,7 @@ async function runAdr(root, sub, rest, flags) {
     return out(flags, list, list.map(d => `${d.draft}: ${d.title}${d.supersedes ? ` (supersedes ${d.supersedes})` : ''}\n${d.rules.map(r => `  ${r.level}: ${r.text}`).join('\n')}`).join('\n') || 'no ADR drafts');
   }
   if (sub === 'accept') {
-    const r = adr.acceptAdr(root, rest[0]);
+    const r = adr.acceptAdr(root, rest[0], { via: flags.via ?? 'cli' });
     const lines = await publish(root, flags, `gmod/adr-${r.id}`, r.sha);
     return out(flags, { ...r, published: lines }, [`accepted ADR ${r.id}: ${r.title}${r.supersedes ? ` (supersedes ${r.supersedes})` : ''}`, ...lines].join('\n'));
   }

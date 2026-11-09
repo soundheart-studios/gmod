@@ -53,6 +53,16 @@ test('claims and decisions', () => {
   expect(decidesPlan('node ~/gmod/bin/gmod.mjs adr list')).toBe(false)
 })
 
+test("gmod decide is a person's decision, from an agent's shell as much as approve", () => {
+  expect(decision('gmod decide 6ca7ca5f approve --via skiff')).toBe('plan')
+  expect(decision('node ~/gmod/bin/gmod.mjs decide e980855e accept')).toBe('plan')
+  expect(decision("sh -c 'gmod decide 6ca7ca5f reject'")).toBe('plan')
+  expect(decision('gmod --json decide 6ca7ca5f ask-changes --note "why?"')).toBe('plan')
+  expect(decision("grep -n 'gmod decide' docs/surfaces.md")).toBe(null)
+  expect(decision('git commit -m "gmod decide refuses agents"')).toBe(null)
+  expect(decision('gmod decided')).toBe(null)
+})
+
 test('switching managed mode is a decision; reading it is not', () => {
   expect(decidesPlan('gmod manage on')).toBe(true)
   expect(decidesPlan('gmod manage off')).toBe(true)
