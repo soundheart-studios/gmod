@@ -379,7 +379,7 @@ export const register: Register = on => {
       }
       case 'approve': {
         if (!isPerson) return { text: 'Only a person at the prompt can approve the plan.' }
-        const r = await gmod($, ['approve'])
+        const r = await gmod($, ['approve', '--via', 'pane'])
         await refresh($)
         return { text: text(r), context: r.exitCode === 0 ? [`The person approved the plan proposal: ${text(r)}`] : undefined }
       }
@@ -392,7 +392,7 @@ export const register: Register = on => {
       case 'adr': {
         const [what = 'drafts', ...more] = rest
         if (['accept', 'reject'].includes(what) && !isPerson) return { text: `Only a person at the prompt can ${what} a decision.` }
-        const r = await gmod($, ['adr', what, ...more])
+        const r = await gmod($, ['adr', what, ...more, ...(what === 'accept' ? ['--via', 'pane'] : [])])
         await refresh($)
         return {
           text: text(r),
@@ -477,7 +477,7 @@ export const register: Register = on => {
     const p = s.proposal
 
     async function decide(choice: 'approve' | 'reject') {
-      const r = await gmod($, [choice])
+      const r = await gmod($, choice === 'approve' ? ['approve', '--via', 'pane'] : [choice])
       await refresh($)
       $.ui.toast(cut(text(r), 120))
     }
@@ -861,7 +861,7 @@ export const register: Register = on => {
     const drafts = s?.adrDrafts ?? []
 
     async function decide(choice: 'accept' | 'reject', draft: string) {
-      const r = await gmod($, ['adr', choice, draft])
+      const r = await gmod($, ['adr', choice, draft, ...(choice === 'accept' ? ['--via', 'pane'] : [])])
       await refresh($)
       const said = text(r)
       $.ui.toast(said.length > 120 ? `${said.slice(0, 119)}…` : said)

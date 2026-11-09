@@ -315,6 +315,8 @@ test('Approve and Reject in the card are the person deciding', async ($, on) => 
   const ui = await $.ui.mount(PANE)
   await ui.press({ key: 'approve' })
   expect(seen.runs.some(r => r.args[0] === 'approve')).toBe(true)
+  // The commit says the decision came from the pane: Decided-Via: pane.
+  expect(seen.runs.find(r => r.args[0] === 'approve')!.args).toEqual(['approve', '--via', 'pane'])
   await ui.press({ key: 'reject' })
   expect(seen.runs.some(r => r.args[0] === 'reject')).toBe(true)
   await ui.unmount()
@@ -531,6 +533,7 @@ test('the decision pane accepts, closes itself and hands back to the plan pane',
   expect(await ui.find({ type: 'Text', text: /^governs src\/\*\*$/ })).toBeDefined()
   await ui.press({ key: 'adracceptcents-only' })
   expect(seen.runs.some(r => r.args[0] === 'adr' && r.args[1] === 'accept' && r.args[2] === 'cents-only')).toBe(true)
+  expect(seen.runs.find(r => r.args[0] === 'adr' && r.args[1] === 'accept')!.args).toEqual(['adr', 'accept', 'cents-only', '--via', 'pane'])
   expect(closed.some(c => c.id === 'gmod-adr')).toBe(true)
   expect(opened.at(-1)).toMatchObject({ id: 'gmod', focus: true })
   await ui.unmount()
