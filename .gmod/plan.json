@@ -41,7 +41,14 @@
     "release-branch": "node --test test/release-branch.test.mjs",
     "ci-pin-1-7-1": "grep -q \"uses: soundheart-studios/gmod@v1.7.1\" .github/workflows/gmod.yml",
     "landed-proposal": "node --test test/landed-proposal.test.mjs",
-    "ci-pin-1-7-2": "grep -q \"uses: soundheart-studios/gmod@v1.7.2\" .github/workflows/gmod.yml"
+    "ci-pin-1-7-2": "grep -q \"uses: soundheart-studios/gmod@v1.7.2\" .github/workflows/gmod.yml",
+    "requests": "node --test test/requests.test.mjs",
+    "resolve-stuck": "node --test test/resolve-stuck.test.mjs",
+    "rebrief": "node --test test/rebrief.test.mjs",
+    "setup-json": "node --test test/setup-json.test.mjs",
+    "doctor-json": "node --test test/doctor-json.test.mjs",
+    "fixtures": "node --test test/fixtures.test.mjs test/surfaces-doc.test.mjs",
+    "ci-pin-1-8-0": "grep -q \"uses: soundheart-studios/gmod@v1.8.0\" .github/workflows/gmod.yml"
   },
   "jobs": [
     {
@@ -1311,6 +1318,230 @@
           "check": "ci-pin-1-7-2"
         }
       ]
+    },
+    {
+      "id": "requests",
+      "phase": "asks",
+      "goal": "An agent asks the person; the answer comes back",
+      "brief": "New lib/requests.mjs (E5 in Skiff's brief). `gmod ask <text> [--options '<json list>']` raises a request for the job claimed here, stored like a proposal (ADR 0002) at refs/gmod/requests/<id> through lib/shared.mjs: {id, job, question, options, by, at, answer?, answeredBy?, answeredAt?, resolved?}; id from the cause (job + question + at), stable on every clone. Add 'requests/' to SHARED_NAMES in lib/core.mjs so sync fetches, reconciles and prunes them, and every write bumps the stamp. `gmod requests [--json] [--job <id>] [--all]` lists open ones, and with --all the answered and resolved ones too, each with question, answer, who answered and when, so a fresh agent on the job (Skiff restarts its worker with the answer) can read it afterwards; answered requests stay until the job is done. lib/signals.mjs: an open request is a 'decide' signal {cause: {request: id}, rev, question, detail: options} with actions ['answer', 'resolve']. lib/decide.mjs: `gmod decide <id> answer --note <text>` records the person's answer (refused without --note, or with an answer not among the options when there are options), `resolve [--note]` closes it without one; person-only rules as for approve. The asking worktree's `gmod notice` (lib/core.mjs) says the answer once, on the agent's next tool round: \"gmod: the person answered your question … : <answer>\". Answered or resolved requests leave signals; the sweep drops refs of done jobs. lib/capabilities.mjs lists ask and requests.",
+      "files": [
+        "lib/requests.mjs",
+        "lib/core.mjs",
+        "lib/signals.mjs",
+        "lib/decide.mjs",
+        "lib/capabilities.mjs",
+        "bin/gmod.mjs"
+      ],
+      "tests": [
+        "test/requests.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "gmod ask raises a request for the claimed job that every clone sees as a signal with a stable id, a rev, and actions answer and resolve",
+          "check": "requests"
+        },
+        {
+          "text": "gmod decide answer and resolve close it, answer only by a person and only from the options when there are some, and the asking worktree's notice gives the answer once",
+          "check": "requests"
+        },
+        {
+          "text": "after it is answered, gmod requests --json --all on any clone still shows the question, the answer, who answered and when, until the job is done",
+          "check": "requests"
+        }
+      ]
+    },
+    {
+      "id": "mod-ask",
+      "phase": "asks",
+      "after": [
+        "requests"
+      ],
+      "goal": "Agents ask from Claude Code; the pane shows requests",
+      "brief": "hooks/register.tsx: an MCP tool `ask` {question, options?, dir?} that runs gmod ask in the job's worktree and returns the request id, telling the agent the answer arrives on a later tool round and not to guess meanwhile. The pane's Needs you lists open requests (the request signal's paneLine), and the person answers there with /gmod answer <id> <text> or resolves with /gmod resolve <id>, which run gmod decide … --via pane and are refused for an agent like approve. hooks/shell.ts: `gmod decide <id> answer|resolve` is already a decision; add nothing unless the tests show a gap. The agent's next tool round carries the notice (already wired through gmod notice).",
+      "files": [
+        "hooks/register.tsx",
+        "test/mod.test.tsx"
+      ],
+      "tests": [
+        "test/mod.test.tsx"
+      ],
+      "done_when": [
+        {
+          "text": "mcp__gmod__ask raises a request and returns its id; the pane shows open requests; /gmod answer and /gmod resolve decide them as the person, and are refused for an agent",
+          "check": "mod"
+        }
+      ]
+    },
+    {
+      "id": "resolve-stuck",
+      "phase": "asks",
+      "after": [
+        "requests"
+      ],
+      "goal": "The person can set a stuck job's signal aside",
+      "brief": "A red/stuck job's signal (and a moved job's) gets the action 'resolve': the person fixed it by hand or knows. `gmod decide <id> resolve [--note]` records a shared mark at refs/gmod/resolved/<signal-id> holding the signal's rev; signals hides a signal while its rev equals the mark's. The stuck signal's rev comes from what makes it stuck (its latest failing verdict: head, failing criteria, at), so a new red run or a new main shows it again. Marks are dropped by the sweep once the job is done. Add 'resolved/' to SHARED_NAMES. Person-only like every decide.",
+      "files": [
+        "lib/signals.mjs",
+        "lib/decide.mjs",
+        "lib/core.mjs"
+      ],
+      "tests": [
+        "test/resolve-stuck.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "resolve hides a stuck job's signal on every clone until it is red again on a new run, and only a person can resolve",
+          "check": "resolve-stuck"
+        }
+      ]
+    },
+    {
+      "id": "rebrief",
+      "phase": "asks",
+      "after": [
+        "resolve-stuck"
+      ],
+      "goal": "The person re-briefs a stuck job in one decision",
+      "brief": "Part of E6. On a stuck or moved job's signal, `gmod decide <id> rebrief --note <new brief>` replaces that job's brief in .gmod/plan.json as the person's decision: committed alone like an approve (`plan: rebrief <job>` with Decided-By/Decided-Via; from a job's branch through decideOnMain, opening its plan PR unless --no-pr), no proposal needed. It refuses a done job, an empty note, and a pending proposal that changes the same job; that refusal names the proposal in the way (its headline or summary, who drafted it, and its signal id) and says to approve or reject it first. It releases the job's claim here and on origin, whoever holds it, so the next worker starts fresh from the new brief. Person-only. The gate already lands a plan-only commit.",
+      "files": [
+        "lib/decide.mjs",
+        "lib/core.mjs",
+        "lib/signals.mjs",
+        "bin/gmod.mjs"
+      ],
+      "tests": [
+        "test/rebrief.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "decide rebrief commits only the new brief as the person's decision and frees the job's claim; it is refused for a done job, an empty note, or under an agent",
+          "check": "rebrief"
+        },
+        {
+          "text": "while a pending proposal changes the same job, rebrief is refused with a message naming that proposal and its signal id",
+          "check": "rebrief"
+        }
+      ]
+    },
+    {
+      "id": "setup-json",
+      "phase": "govern",
+      "goal": "One setup call from a person's surface, as JSON",
+      "brief": "lib/setup.mjs and bin/gmod.mjs: `gmod setup --json [--runs-on <label>] [--reviewer …] [--managed] [--yes]` stays non-interactive and lands its setup as today (its PR). Add: a starter .gmod/plan.json when none (empty jobs, main set), --managed writes .gmod/managed.json on in the same setup PR (with Decided-By/Decided-Via trailers), and one JSON result: {ok, steps: [{id, status: done|skipped|failed, detail}], pr: {url}, left: [what the person still does, e.g. add GMOD_REVIEW_KEY as a repository secret]}. Person-only like manage on: refused under an agent (lib/decide.mjs agentReason) when --managed is given, and without --yes when there's no terminal. hooks/shell.ts reads `gmod setup … --managed` as a 'managed' decision so an agent's shell is refused it.",
+      "files": [
+        "lib/setup.mjs",
+        "bin/gmod.mjs",
+        "hooks/shell.ts",
+        "test/shell.test.ts"
+      ],
+      "tests": [
+        "test/setup-json.test.mjs",
+        "test/shell.test.ts"
+      ],
+      "done_when": [
+        {
+          "text": "setup --json prints each step's status, the PR and what is left for the person, writes a starter plan, and with --managed turns managed mode on in the same PR",
+          "check": "setup-json"
+        },
+        {
+          "text": "setup --managed is refused under an agent, from the CLI and from an agent's shell",
+          "check": "setup-json"
+        },
+        {
+          "text": "an agent's shell running gmod setup --managed is refused as a managed decision",
+          "check": "mod"
+        }
+      ],
+      "after": [
+        "rebrief"
+      ]
+    },
+    {
+      "id": "doctor-json",
+      "phase": "govern",
+      "after": [
+        "setup-json"
+      ],
+      "goal": "Doctor reports exactly what is set up, as JSON",
+      "brief": "DESIGN.md §6.4 in Skiff's brief. `gmod doctor --json` keeps its findings and adds `checks`: [{id, status: ok|missing|differs, detail, fix}] for: plan (present on main), managed (on/off), workflow (present, its gmod pin), runner (label, and whether a runner carries it on GitHub), reviewer (kind, model, blocking or advice), protection (main's protection matches protect.json), installed (this gmod's version, and the newest release when known). Each fix is one line. Works on GitHub, GitLab and Gitea where the forge can tell; otherwise status is missing with why. Read-only: no person rule.",
+      "files": [
+        "lib/setup.mjs",
+        "bin/gmod.mjs"
+      ],
+      "tests": [
+        "test/doctor-json.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "doctor --json gives one check each for plan, managed, workflow pin, runner, reviewer, protection and installed version, each ok, missing or differs with a one-line fix",
+          "check": "doctor-json"
+        }
+      ]
+    },
+    {
+      "id": "fixtures-1-8",
+      "phase": "release-1-8",
+      "goal": "Skiff gets fixtures and docs for every 1.8 surface",
+      "brief": "Recorded outputs Skiff copies into crates/gmod-contract: test/fixtures/v1/signals-request.json (signals --json with an open request and a stuck job showing answer/resolve/rebrief), doctor.json and setup.json, made from real runs in a scratch repository (forge calls stubbed as the existing setup tests do) and checked by test/fixtures.test.mjs, which regenerates them and fails when the shape drifts. docs/surfaces.md: requests (shared, ids, actions), resolve, rebrief, setup --json and doctor --json; still protocol v1, additive only. capabilities --json's commands include ask, requests and setup.",
+      "files": [
+        "test/fixtures/**",
+        "docs/surfaces.md",
+        "docs/reference.md",
+        "lib/capabilities.mjs"
+      ],
+      "tests": [
+        "test/fixtures.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "the fixtures match what gmod prints today, and docs/surfaces.md describes requests, resolve, rebrief, setup --json and doctor --json",
+          "check": "fixtures"
+        }
+      ]
+    },
+    {
+      "id": "release-1-8-0",
+      "phase": "release-1-8",
+      "after": [
+        "fixtures-1-8"
+      ],
+      "goal": "Release gmod 1.8.0",
+      "brief": "Bump to 1.8.0 as the 1.7 releases did: npm version 1.8.0 --no-git-tag-version, plugin.json by hand, test/release.test.mjs at 1.8.0, CHANGELOG.md 1.8.0 entry, plain English first. After landing: tag v1.8.0, publish the GitHub release, move ~/.local/bin/gmod and ~/.claude/settings.json, tell the Skiff session.",
+      "files": [
+        "package.json",
+        "package-lock.json",
+        ".claude-plugin/plugin.json",
+        "CHANGELOG.md",
+        "test/release.test.mjs"
+      ],
+      "tests": [
+        "test/release.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "package.json, package-lock.json and plugin.json all say 1.8.0, and CHANGELOG.md has a 1.8.0 entry",
+          "check": "release"
+        }
+      ]
+    },
+    {
+      "id": "ci-gmod-1-8-0",
+      "phase": "release-1-8",
+      "after": [
+        "release-1-8-0"
+      ],
+      "goal": "CI runs gmod 1.8.0",
+      "brief": "Change `uses: soundheart-studios/gmod@v1.7.2` to `@v1.8.0` in .github/workflows/gmod.yml, nothing else, after v1.8.0 is tagged.",
+      "files": [
+        ".github/workflows/gmod.yml"
+      ],
+      "tests": [],
+      "done_when": [
+        {
+          "text": "the gmod workflow uses soundheart-studios/gmod@v1.8.0",
+          "check": "ci-pin-1-8-0"
+        }
+      ]
     }
   ],
   "phases": [
@@ -1389,6 +1620,31 @@
       "outcome": "An approved proposal never comes back as a stale \"no changes\" card, and 1.7.2 ships the fix.",
       "after": [
         "release-1-7-1"
+      ]
+    },
+    {
+      "id": "asks",
+      "title": "Requests and decisions",
+      "outcome": "An agent can ask the person a question and get the answer back, and the person can resolve or re-brief a stuck job, from the pane, the CLI or Skiff.",
+      "after": [
+        "landed-proposal"
+      ]
+    },
+    {
+      "id": "govern",
+      "title": "Setup and doctor",
+      "outcome": "A person's surface like Skiff can set a repository up in one call and read back exactly what is set up, as JSON.",
+      "after": [
+        "landed-proposal"
+      ]
+    },
+    {
+      "id": "release-1-8",
+      "title": "Release 1.8",
+      "outcome": "gmod 1.8.0 is released with requests, resolve, re-brief, setup --json and doctor --json, Skiff has fixtures for each, and CI runs it.",
+      "after": [
+        "asks",
+        "govern"
       ]
     }
   ]
