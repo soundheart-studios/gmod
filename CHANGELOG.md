@@ -2,6 +2,16 @@
 
 What each gmod release changes for you, with the details underneath.
 
+## 1.7.1 — 2026-11-08
+
+Fixes from using 1.7.0 for real: the hook stops refusing edits because of words in them, a Claude Code session that's behind says so, and a released job's branch no longer gets in the next claim's way.
+
+- **The hook refuses commands, not text that mentions them.** An edit was refused when its new text mentioned gmod's shared refs next to a word like "push" or "tag", and a doc written through a quoted heredoc (`<<'EOF'`) was refused when it showed `gmod decide … approve` in backticks. Now only a real `git push`, `update-ref`, `tag`, `replace` or `branch -D` on those refs is refused, as are a real `gmod approve` or `decide`, also through `sh -c` or `eval`. An unquoted heredoc's `$(…)` and `sh <<EOF` still count, because they run. (#73)
+- **Restart Claude Code after upgrading, and the pane now tells you to.** A session keeps the mod it started with, and that mod runs its own copy of gmod. After an upgrade the old pane said "there is no proposal to approve" while `gmod proposal` showed one. When the `gmod` on your PATH is newer than the mod, the pane shows `gmod X is installed: restart Claude Code to load it`, and any refusal from the mod adds the same line. The new [Upgrading](docs/setup.md#upgrading) steps end with the restart. (#77)
+- **Releasing a job frees its branch.** `gmod release` on a clean worktree steps off `gmod/<job>`, and deletes the branch when it holds no commits beyond main, so the next claim, in any worktree, can switch to it. Committed or uncommitted work is left where it is. If the branch is still checked out in another worktree, `gmod claim` refuses, says which worktree, and how to free it, instead of carrying on from the wrong branch. (#76)
+- **Decisions from the pane say so.** Approving or accepting in the pane, or with `/gmod approve` and `/gmod adr accept`, records `Decided-Via: pane` instead of `cli`. (#74)
+- **For contributors: tests never sign commits.** `npm test` turns commit and tag signing off for the git it runs, so a global `commit.gpgsign` no longer makes random tests fail locally. (#75)
+
 ## 1.7.0 — 2026-11-08
 
 Every app and tool that reads gmod (the pane, the CLI, CI, Skiff, Linear, other agents) now works from one contract: one stamp to watch, the same proposals, ADR drafts and red jobs on every clone, under the same ids, and one command to decide. It's all in [docs/surfaces.md](docs/surfaces.md), and the protocol is still v1: only fields and commands were added.
