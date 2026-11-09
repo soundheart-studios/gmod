@@ -53,6 +53,44 @@ test('claims and decisions', () => {
   expect(decidesPlan('node ~/gmod/bin/gmod.mjs adr list')).toBe(false)
 })
 
+test('moving claims is a git command on refs/gmod/, not text that mentions them', () => {
+  // Still caught: git itself moving the shared refs, however it is reached.
+  expect(movesClaims('git push origin refs/gmod/claims/x')).toBe(true)
+  expect(movesClaims('git push -q --force-with-lease origin :refs/gmod/claims/x')).toBe(true)
+  expect(movesClaims('git update-ref -d refs/gmod/claims/x')).toBe(true)
+  expect(movesClaims('git -C ../wt update-ref refs/gmod/proposal abc123')).toBe(true)
+  expect(movesClaims('git branch -D refs/gmod/claims/x')).toBe(true)
+  expect(movesClaims('git tag refs/gmod/claims/x HEAD')).toBe(true)
+  expect(movesClaims('git replace refs/gmod/proposal abc')).toBe(true)
+  expect(movesClaims("cd ../wt && git push origin ':refs/gmod/claims/x'")).toBe(true)
+  expect(movesClaims("sh -c 'git push origin :refs/gmod/claims/x'")).toBe(true)
+  expect(movesClaims('eval git update-ref -d refs/gmod/runs/x')).toBe(true)
+  expect(movesClaims("echo 'git push origin :refs/gmod/claims/x' | sh")).toBe(true)
+  expect(movesClaims("bash <<'EOF'\ngit update-ref -d refs/gmod/claims/x\nEOF")).toBe(true)
+  expect(movesClaims('git push origin HEAD:refs/gmod/claims/x $(git rev-parse HEAD)')).toBe(true)
+  expect(movesClaims('echo $(git update-ref -d refs/gmod/claims/x)')).toBe(true)
+  // Text: an edit, a heredoc, a comment, a read of the refs.
+  expect(movesClaims("sed -i 's/old/tag it, then push refs\\/gmod\\/proposal/' notes.md")).toBe(false)
+  expect(movesClaims("sed -i 's/old/tag it: refs/gmod/proposal moves on push/' notes.md")).toBe(false)
+  expect(movesClaims("git ls-remote origin 'refs/gmod/*' # then push")).toBe(false)
+  expect(movesClaims("python3 - <<'EOF'\n# the poller lists refs/gmod/* and never does a push\nrun(['git', 'ls-remote', 'origin', 'refs/gmod/*'])\nEOF")).toBe(false)
+  expect(movesClaims("node --experimental-strip-types -e \"import('./hooks/shell.ts').then(m => m.movesClaims('git push refs/gmod/x'))\"")).toBe(false)
+  expect(movesClaims('git push origin gmod/hook-words')).toBe(false)
+  expect(movesClaims('git fetch origin +refs/gmod/claims/*:refs/gmod-origin/claims/* && git tag v1.7.1')).toBe(false)
+})
+
+test("a quoted heredoc's body is text: backticks and $(…) in it run nothing", () => {
+  expect(decision("cat > a.md <<'EOF'\nRun `gmod decide abc approve` to approve.\nEOF")).toBe(null)
+  expect(decision('cat > a.md << "EOF"\nor $(gmod approve) from the pane\nEOF')).toBe(null)
+  expect(decision("mkdir -p d && cat > d/a.swift <<'SWIFT'\nlet c = \"$(gmod decide abc approve)\"\nSWIFT\necho done")).toBe(null)
+  expect(decision("cat <<-'EOF' > a.md\n\t`gmod adr accept x`\n\tEOF")).toBe(null)
+  // Unquoted, the shell runs them; a shell reading the heredoc runs it all.
+  expect(decision('cat > a.md <<EOF\nRun `gmod decide abc approve`\nEOF')).toBe('plan')
+  expect(decision('cat > a.md <<EOF\n$(gmod approve)\nEOF')).toBe('plan')
+  expect(decision("sh <<'EOF'\ngmod approve\nEOF")).toBe('plan')
+  expect(decision('bash -s <<EOF\ngmod decide abc approve\nEOF')).toBe('plan')
+})
+
 test("gmod decide is a person's decision, from an agent's shell as much as approve", () => {
   expect(decision('gmod decide 6ca7ca5f approve --via skiff')).toBe('plan')
   expect(decision('node ~/gmod/bin/gmod.mjs decide e980855e accept')).toBe('plan')

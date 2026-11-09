@@ -39,8 +39,44 @@ export function writesRecords(cmd: string): boolean {
   return writes(cmd, RECORDS)
 }
 
-export function movesClaims(cmd: string): boolean {
-  return /refs\/gmod\//.test(cmd) && /\b(update-ref|push|branch\s+-D|tag|replace)\b/.test(cmd)
+// Moving gmod's shared refs by hand: git update-ref, push, branch -D, tag or
+// replace with a refs/gmod/ argument. Read word by word like decision(), so
+// a sed's new text, a heredoc, a comment or a read (ls-remote) is not a move;
+// sh -c, eval and the like are read too.
+export function movesClaims(cmd: string, depth = 0): boolean {
+  if (depth > 3) return false
+  for (const words of lists(cmd)) {
+    for (const w of words) {
+      if (quotedDoc(w)) continue
+      for (const m of w.matchAll(/\$\(([\s\S]*)\)|`([^`]*)`/g)) if (movesClaims(m[1] ?? m[2] ?? '', depth + 1)) return true
+    }
+    const { name, args } = simple(words)
+    if (RUNNERS.includes(name)) {
+      const c = args.findIndex(a => /^-[a-zA-Z]*c[a-zA-Z]*$/.test(a))
+      const doc = args.find(a => a.startsWith('<<'))
+      // A shell reading its commands from a pipe: a mention anywhere counts.
+      if (SHELLS.includes(name) && c < 0 && !doc && !args.some(a => !a.startsWith('-'))) {
+        if (/refs\/gmod\//.test(cmd) && /\b(update-ref|push|branch\s+-D|tag|replace)\b/.test(cmd)) return true
+        continue
+      }
+      const text = SHELLS.includes(name)
+        ? c >= 0 ? (args.slice(c + 1).find(a => !a.startsWith('-')) ?? '') : doc?.replace(/^<<\S*/, '') ?? ''
+        : args.join(' ')
+      if (movesClaims(text, depth + 1)) return true
+      continue
+    }
+    if (name !== 'git') continue
+    const { sub, rest } = gitCall(args, '.')
+    const moves = ['update-ref', 'push', 'tag', 'replace'].includes(sub) || (sub === 'branch' && rest.some(a => /^-[a-zA-Z]*D/.test(a) || a === '--delete'))
+    if (moves && rest.some(a => a.includes('refs/gmod/'))) return true
+  }
+  return false
+}
+
+// A heredoc whose delimiter is quoted (<<'EOF', <<"EOF"): its body is text,
+// with no $(…) or `…` run in it.
+function quotedDoc(word: string): boolean {
+  return word.startsWith("<<'")
 }
 
 // A person's decisions: approving or rejecting the plan or an ADR, and
@@ -90,7 +126,7 @@ function decisionWords(words: string[], depth: number): Decision | null {
   // What $(…) and `…` run, wherever they sit.
   let inside: Decision | null = null
   for (const w of words)
-    for (const m of w.matchAll(/\$\(([\s\S]*)\)|`([^`]*)`/g)) inside = either(inside, decision(m[1] ?? m[2] ?? '', depth + 1))
+    if (!quotedDoc(w)) for (const m of w.matchAll(/\$\(([\s\S]*)\)|`([^`]*)`/g)) inside = either(inside, decision(m[1] ?? m[2] ?? '', depth + 1))
   return either(inside, commandDecision(words, depth))
 }
 
@@ -176,7 +212,8 @@ function lists(cmd: string): string[][] {
       while (i + 1 < cmd.length && cmd[i + 1] !== '\n') i++
     } else if (c === '<' && cmd[i + 1] === '<' && cmd[i + 2] !== '<') {
       // A heredoc: its body is text for the command, not commands. It is
-      // kept as one word, `<<DELIM` plus the body, up to the closing line.
+      // kept as one word, `<<DELIM` plus the body, up to the closing line;
+      // `<<'DELIM` when the delimiter is quoted and the body runs nothing.
       const m = cmd.slice(i).match(/^<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1/)
       const nl = cmd.indexOf('\n', i)
       if (!m || nl < 0) {
@@ -186,7 +223,7 @@ function lists(cmd: string): string[][] {
       const close = new RegExp(String.raw`\n[\t ]*${m[2]}[\t ]*(?=\n|$)`).exec(cmd.slice(nl))
       const stop = close ? nl + close.index + close[0].length : cmd.length
       end()
-      out.at(-1)!.push(`<<${m[2]}${cmd.slice(i + m[0].length, stop)}`)
+      out.at(-1)!.push(`<<${m[1] ? "'" : ''}${m[2]}${cmd.slice(i + m[0].length, stop)}`)
       i = stop - 1
     } else if (c === '&' && (cmd[i - 1] === '>' || (cmd[i + 1] === '>' && word === null))) {
       // Part of a redirection: 2>&1, >&2, &>file.
