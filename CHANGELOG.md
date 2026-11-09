@@ -2,6 +2,12 @@
 
 What each gmod release changes for you, with the details underneath.
 
+## 1.7.2 — 2026-11-08
+
+An approved plan change no longer comes back as a stale "no changes" card.
+
+- **A proposal that has landed is gone everywhere.** Seen in Skiff after approving in the pane: the proposal came back, here and on origin, as the very draft just approved, and the pane showed "Plan change: no changes" with ".gmod/plan.json changed since this was drafted" until someone rejected it. A copy left behind was taken by the next sync for an edit made offline and pushed back. Now a proposal whose plan is already the plan (on disk, on main or on origin's main), drafted against an older one, has landed: sync deletes it here and on origin instead of pushing it, and the pane, `gmod proposal`, `gmod signals` and approve never show or act on it. A draft against the current plan is untouched. (#82)
+
 ## 1.7.1 — 2026-11-08
 
 Fixes from using 1.7.0 for real: the hook stops refusing edits because of words in them, a Claude Code session that's behind says so, and a released job's branch no longer gets in the next claim's way.
