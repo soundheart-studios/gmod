@@ -1,0 +1,48 @@
+{
+  "v": 1,
+  "stamp": "0-5c99b9a7",
+  "signals": [
+    {
+      "v": 1,
+      "id": "dc53cf7c",
+      "kind": "decide",
+      "rev": "28f94df0",
+      "project": "person",
+      "question": "money asks: Store money as integer cents or as decimals?",
+      "detail": "- integer cents\n- decimals",
+      "cause": {
+        "request": "29043bd7a897"
+      },
+      "evidence": [
+        "request/29043bd7a897",
+        "journal/money.md"
+      ],
+      "actions": [
+        "answer",
+        "resolve"
+      ],
+      "at": "2026-11-09T09:07:05.584Z"
+    },
+    {
+      "v": 1,
+      "id": "9528422c",
+      "kind": "unstick",
+      "rev": "1e0e7317",
+      "project": "person",
+      "question": "add-sum is red in elsewhere: its criteria still fail",
+      "detail": "✗ sum adds",
+      "cause": {
+        "stuck": "add-sum"
+      },
+      "evidence": [
+        "journal/add-sum.md"
+      ],
+      "actions": [
+        "open",
+        "rebrief",
+        "resolve"
+      ]
+    }
+  ],
+  "workers": []
+}

@@ -1,0 +1,19 @@
+{
+  "requests": [
+    {
+      "id": "29043bd7a897",
+      "job": "money",
+      "question": "Store money as integer cents or as decimals?",
+      "options": [
+        "integer cents",
+        "decimals"
+      ],
+      "by": "agent-2@example.com",
+      "at": "2026-11-09T09:07:05.584Z",
+      "answer": "integer cents",
+      "answeredBy": "person@example.com",
+      "answeredAt": "2026-11-09T09:07:07.925Z",
+      "via": "skiff"
+    }
+  ]
+}

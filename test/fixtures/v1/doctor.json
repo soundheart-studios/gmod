@@ -1,0 +1,87 @@
+{
+  "forge": {
+    "kind": "github",
+    "host": "github.com",
+    "owner": "o",
+    "repo": "r",
+    "web": "https://github.com",
+    "api": "https://api.github.com"
+  },
+  "findings": [
+    {
+      "ok": true,
+      "msg": "gh is signed in",
+      "fix": "gh auth login"
+    },
+    {
+      "ok": true,
+      "msg": "a plan is on main",
+      "fix": "/gmod:plan in Claude Code, then approve it"
+    },
+    {
+      "ok": true,
+      "msg": "the workflow runs gmod v1.7.2",
+      "fix": "gmod setup"
+    },
+    {
+      "ok": true,
+      "msg": "branches CI catches up are checked again through repository_dispatch: gmod starts their runs",
+      "fix": "gmod setup"
+    },
+    {
+      "ok": false,
+      "msg": "the reviewer's key isn't set (GMOD_REVIEW_KEY)",
+      "fix": "gh secret set GMOD_REVIEW_KEY --repo o/r"
+    },
+    {
+      "ok": true,
+      "msg": ".gmod/protect.json says main requires gate and review",
+      "fix": "gmod setup"
+    },
+    {
+      "ok": false,
+      "msg": "couldn't read main's rules (401), so it can't be held to .gmod/protect.json",
+      "fix": "gmod ci protect"
+    }
+  ],
+  "ok": false,
+  "checks": [
+    {
+      "id": "plan",
+      "status": "ok",
+      "detail": "a plan is on main (0 jobs)"
+    },
+    {
+      "id": "managed",
+      "status": "ok",
+      "detail": "managed mode is off"
+    },
+    {
+      "id": "workflow",
+      "status": "ok",
+      "detail": ".github/workflows/gmod.yml runs gmod v1.7.2"
+    },
+    {
+      "id": "runner",
+      "status": "ok",
+      "detail": "GitHub-hosted runners (ubuntu-latest)"
+    },
+    {
+      "id": "reviewer",
+      "status": "missing",
+      "detail": "deepseek-flash at https://api.deepseek.com/v1, advice: it only comments; its key GMOD_REVIEW_KEY isn't set",
+      "fix": "gh secret set GMOD_REVIEW_KEY --repo o/r"
+    },
+    {
+      "id": "protection",
+      "status": "differs",
+      "detail": "couldn't read main's rules (401), so it can't be held to .gmod/protect.json",
+      "fix": "gmod ci protect"
+    },
+    {
+      "id": "installed",
+      "status": "ok",
+      "detail": "this gmod is 1.7.2"
+    }
+  ]
+}
