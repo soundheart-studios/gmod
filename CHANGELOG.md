@@ -2,6 +2,38 @@
 
 What each gmod release changes for you, with the details underneath.
 
+## 1.7.0 — 2026-11-08
+
+Every app and tool that reads gmod (the pane, the CLI, CI, Skiff, Linear, other agents) now works from one contract: one stamp to watch, the same proposals, ADR drafts and red jobs on every clone, under the same ids, and one command to decide. It's all in [docs/surfaces.md](docs/surfaces.md), and the protocol is still v1: only fields and commands were added.
+
+### One stamp to watch
+
+- **`gmod stamp` prints one value that changes whenever anything gmod shows may have changed.** `state --json` and `signals --json` carry the same value as `stamp`. A counter in `.git/gmod/stamp` moves on every gmod write (proposals, ADR drafts, claims, check runs), so an app can watch that file; the value also covers `main` and `refs/gmod/*`, so a plain `git fetch` that brings a teammate's work moves it too. Reading never moves it. (#62)
+
+### Shared with everyone, not just this clone (ADR 0002)
+
+- **The plan proposal lives at `refs/gmod/proposal` and is pushed like claims.** Every clone sees the same draft. Two people editing at once both keep their edits: whoever loses the race reads again and applies theirs on top. Approving or rejecting takes it down everywhere, and refuses if it changed since you read it. Edits made offline are pushed on the next sync. (#63)
+- **Each ADR draft lives at `refs/gmod/adr-drafts/<slug>`.** Drafts show on every clone, and accepting or rejecting one removes it everywhere. (#65)
+- **A job's latest check result is published to `refs/gmod/runs/<job>`.** A job red on one machine is stuck, and gives its signal, everywhere; green there clears it. It's best effort (a check never fails because the push did) and only ever a signal: the CI gate proves every pull request again and never reads it. (#66)
+- **Upgrading is automatic.** A 1.6 `proposal.json` or `adr-drafts.json` is moved into the refs the first time gmod reads it.
+
+### The same signal, the same id, everywhere
+
+- **A signal's id now holds on every clone and machine**, so a mute or a decision made in one place holds in all of them. Ids from 1.6 are unchanged. (#67)
+- **The proposal's signal carries a `rev`:** a hash of what you see (the plan, its summary, its assumptions), new on every edit while the id stays. (#67)
+
+### `gmod decide`: one way to decide, from any surface
+
+- **`gmod decide <signal-id> <action>`** approves, asks for changes on or rejects a proposal, and accepts or rejects an ADR draft, by the signal's id. With `--rev` it refuses a proposal that changed since you saw it. Asking for changes leaves your note on the shared proposal for whoever drafts it. (#68)
+- **Only a person decides.** `decide` refuses under gmod's agent identity or an agent's environment (Claude Code, Codex, pi, CI); in a terminal you type the signal's id back, and without one the app names itself with `--via`. Inside Claude Code the mod refuses it from an agent's shell, as it does `approve`. What it can't stop is in [the limits](docs/limits.md). (#68)
+- **Every decision commit says who decided and how:** `Decided-By` and `Decided-Via` trailers on plan, ADR and managed-mode commits, including plain `gmod approve`. (#68)
+- **`gmod proposal` brings the proposal up to date from origin first** (`--no-sync` to skip). (#68)
+
+### Fixes
+
+- **No empty plan proposals.** Describing one when none is pending is refused instead of leaving an empty draft behind, and approving one that changes nothing says "the proposal changes nothing: reject it" instead of failing with a raw git error. (#61)
+- **A decision's pull request is titled by its own commit,** not by an earlier decision still waiting to land beneath it. (#60)
+
 ## 1.6.2 — 2026-11-08
 
 `gmod manage on` and `gmod manage off` open their pull request again.
