@@ -1,0 +1,5 @@
+# signal-ids: The same signal has the same id on every machine
+
+- 2026-11-08T23:57:50.055Z check: red (two clones of one remote give identical ids for a proposal, an ADR draft and a red job; editing the proposal keeps its signal id and changes its rev; ids for the recorded 1.6 cases are unchanged)
+- 2026-11-08T23:58:58.128Z check: green
+- 2026-11-09T00:02:20.615Z dev@soundheart.io: The shared-state jobs already made ids agree across clones (proposal cause is its first-drafted time, carried in the shared proposal; ADR drafts are keyed by slug; a red job by id), so this job proves it with two clones and pins the 1.6 ids for recorded causes (6ca7ca5f matches the live 1.6.2 proposal signal seen while landing the 1.7 plan). New: the proposal view and its signal carry `rev`, a 12-hex hash of what the person sees (plan, summary, assumptions, drop reasons, keys sorted): the same on every clone, new on every edit, while the id stays. Red came only from the missing rev. Full suite 165/167 locally, the one failure the known gpg signing flake in ci.test.mjs (21/21 when rerun alone, twice); mod 49/49.
