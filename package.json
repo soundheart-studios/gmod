@@ -7,7 +7,7 @@
     "gmod": "bin/gmod.mjs"
   },
   "scripts": {
-    "test": "ANTHROPIC_API_KEY= GMOD_REVIEW_URL= node --test --test-reporter=spec test/*.test.mjs"
+    "test": "ANTHROPIC_API_KEY= GMOD_REVIEW_URL= node --import ./test/setup.mjs --test --test-reporter=spec test/*.test.mjs"
   },
   "engines": {
     "node": ">=20"
