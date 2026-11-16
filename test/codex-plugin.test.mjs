@@ -41,6 +41,26 @@ test('the MCP server runs gmod mcp', () => {
   assert.deepEqual(s.args, ['mcp']);
 });
 
+// codex exec with approval_policy never refuses every unapproved MCP call, and
+// interactively the person would be asked on each one. gmod's tools enforce
+// their own rules and none decides for the person, so they're approved by default.
+test('the gmod server approves its tools by default', () => {
+  const s = json('codex/mcp.json').mcpServers.gmod;
+  assert.equal(s.default_tools_approval_mode, 'approve');
+});
+
+test('the Codex work skill stops on a refusal the job needs, and skips a refused tool it does not', () => {
+  const text = readFileSync(join(CODEX, 'skills', 'work', 'SKILL.md'), 'utf8');
+  const rule = text.split('\n').find(l => /denied/i.test(l) && /stop/i.test(l));
+  assert.ok(rule, 'the work skill has a rule about refusals');
+  assert.match(rule, /gmod/, 'a refusal by gmod is named');
+  assert.match(rule, /hook/i, 'a refusal by its hooks is named');
+  assert.match(rule, /sandbox/i, 'a refusal by the sandbox is named');
+  assert.match(rule, /job needs/i, 'stopping is about what the job needs');
+  assert.match(rule, /doesn't need[^.]*skip|skip[^.]*doesn't need/i, 'a refused tool the job does not need is skipped');
+  assert.match(rule, /stop/i);
+});
+
 test('every hook runs gmod hook codex, on the events gmod needs', () => {
   const { hooks } = json('codex/hooks/hooks.json');
   const commands = Object.values(hooks).flat().flatMap(g => g.hooks);
