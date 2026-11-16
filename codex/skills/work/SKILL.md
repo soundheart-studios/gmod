@@ -18,7 +18,7 @@ The plan is `.gmod/plan.json`: jobs, each with a goal, the files it may change (
 
 Use `mcp__gmod__note` for decisions and dead ends the reviewer should see, and `mcp__gmod__ask` when only the person can answer.
 
-**If anything is denied** (by gmod, a hook or the sandbox), don't look for another way to do the same thing: no other file, no other session, no asking another agent or the person to do it for you, no settings changes. Say exactly what was denied and stop.
+**If something the job needs is denied** (by gmod, its hooks or the sandbox), don't look for another way to do the same thing: no other file, no other session, no asking another agent or the person to do it for you, no settings changes. Say exactly what was denied and stop. A refused tool the job doesn't need (another MCP server's, say) doesn't stop the job: skip it, mention it in your report, and carry on.
 
 The forge's CLI login (`gh`, `glab`, or `tea`) is what gmod uses; never ask the person to paste a token.
 
