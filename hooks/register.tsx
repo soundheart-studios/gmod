@@ -6,6 +6,8 @@ import { upgradeNotice } from './version'
 import { commitDirs, commitsAlone, decision, mergesPr, movesClaims, resolveDir, writesPlan, writesRecords } from './shell'
 // @ts-ignore: plain JavaScript, shared with the gmod command (gmod signals)
 import { paneLine as paneLineJs, signalsFrom as signalsFromJs } from '../lib/signals.mjs'
+// @ts-ignore: plain JavaScript, shared with the Codex hook (gmod hook codex)
+import { FOR_SUBAGENTS, ROUTINE } from '../lib/routine.mjs'
 
 // A signal: something that needs a person (lib/signals.mjs computes them).
 type Signal = { id: string; kind: 'decide' | 'unstick' | 'know'; question: string; detail?: string; cause: Record<string, unknown>; evidence: string[]; actions: string[] }
@@ -34,20 +36,6 @@ type GmodRequest = { id: string; job: string; question: string; options?: string
 const openRequests = (s: GmodStatus | null) => ((s as { requests?: GmodRequest[] } | null)?.requests ?? [])
 // Phases the person folded or unfolded; the rest follow where the work is.
 const phaseOpen = atom({ plugin: 'gmod', key: 'phaseOpen' } as const, {})
-
-const ROUTINE = `This repository plans its work in .gmod/plan.json, and the gmod mod enforces it:
-- Take work with mcp__gmod__next and mcp__gmod__claim. Change only the claimed job's files; edits elsewhere are refused. Keep the job's journal with mcp__gmod__note: intent, decisions, dead ends.
-- Write or change the tests first, run mcp__gmod__check and see it fail (red). Then make it pass and run mcp__gmod__check again (green).
-- Hand the work over with mcp__gmod__commit once it is green: it commits exactly what the passing check ran on as "<job>: …", pushes, and opens the pull request, which lands by itself once CI's checks pass. Don't run git commit yourself, and never merge a pull request. mcp__gmod__pr_status says how its checks went; fix what they found and commit again.
-- If a command or tool is denied, don't look for another way to do the same thing (another file, another session, another agent): say what was denied and stop.
-- Plan changes are drafted with mcp__gmod__propose_phase / propose_job, edit_job and drop_job (bigger plans group jobs into phases, each with an outcome, ordered after other phases), then described with mcp__gmod__describe_proposal (one plain sentence of why, and your assumptions); the person approves them in the gmod pane or with /gmod approve. Never write .gmod/plan.json yourself.
-- CI runs the same checks, proves the tests fail without your change, and an AI reviewer reads it against the job and the ADRs.`
-
-// What a subagent is told, since its own prompt is the parent's call.
-const FOR_SUBAGENTS = `
-
----
-This repository's work is governed by gmod (.gmod/plan.json). If you work in a worktree of your own, pass its path as "dir" to every mcp__gmod__ tool, and claim your own job there before changing files. Edits outside the claimed job's files are refused. Run mcp__gmod__check while it fails, then again once it passes, then finish the job yourself with mcp__gmod__commit (with "dir"): it commits, pushes and opens the pull request that lands on green. Don't run git commit, don't hand the commit back to the agent that started you, and if anything is denied, report it and stop: never try another way round.`
 
 // The steps a job takes to main. Red then green is one step, "test": its
 // dot is red while failing, green once it passes after failing.
