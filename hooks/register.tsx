@@ -100,12 +100,17 @@ function arg(e: unknown, key: string): string {
 // Main moved under a job: the agent hears it on its next step, from the
 // folder that step ran in, so a subagent in its own worktree hears about its
 // own job. Only asked when some job is affected at all.
+// After a shell command (`shell`), gmod is also asked whenever a job is
+// claimed: the command may have written files outside it, and gmod says which
+// (once per set of them, lib/core.mjs strayNotice).
 const MOVED_LEVELS = ['touched', 'conflicts', 'breaks']
-async function withNotice<R extends ToolCallResult>($: EngineInterface, ran: R, path: string): Promise<R> {
+async function withNotice<R extends ToolCallResult>($: EngineInterface, ran: R, path: string, shell = false): Promise<R> {
   if (ran.deny !== undefined || !path) return ran
   const s = await read($, status)
   const out = await read($, asked)
-  if (!out.length && !(s?.jobs ?? []).some(j => j.moved && MOVED_LEVELS.includes(j.moved.level))) return ran
+  const jobs = s?.jobs ?? []
+  const claimed = shell && (!!s?.claim || jobs.some(j => j.state === 'claimed'))
+  if (!out.length && !claimed && !jobs.some(j => j.moved && MOVED_LEVELS.includes(j.moved.level))) return ran
   const said = (await gmod($, ['notice', path])).stdout.trim()
   // Asked and no longer open: answered or resolved, and now told.
   if (out.length) {
@@ -381,7 +386,7 @@ export const register: Register = on => {
     if (refused) return { deny: refused }
     const ran = await next(e)
     if (/\bgit\b|gmod/.test(cmd)) await refresh($)
-    return withNotice($, ran, await $.session.cwd())
+    return withNotice($, ran, await $.session.cwd(), true)
   }).catch(($, e, next) => (next.called ? next(e) : { deny: 'gmod: its command guard failed; nothing ran' }))
 
   // A subagent is told the routine in its own prompt. The hook never adds it:

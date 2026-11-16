@@ -481,6 +481,23 @@ test('nothing is asked while no job is affected', async ($, on) => {
   expect(seen.runs.some(r => r.args[0] === 'notice')).toBe(false)
 })
 
+test('after a shell command with a job claimed, the agent hears which files it wrote outside the job', async ($, on) => {
+  const STRAY = "gmod: this command changed files outside add-sum: README.md. Put them back (git checkout -- <path>, or remove a new file) before going on; they can't be committed with this job."
+  const seen = await started($, on, args =>
+    args[0] === 'notice' ? { exitCode: 0, stdout: STRAY } : { exitCode: 0, stdout: args[0] === 'status' ? STATUS : 'ok' },
+  )
+  const out = await $.tool.call({ tool: 'Bash', command: "printf 'hello\\n' >> README.md" })
+  expect(out.context?.at(-1)).toBe(STRAY)
+  expect(seen.runs.find(r => r.args[0] === 'notice')?.args[1]).toBe('/repo')
+})
+
+test('after a shell command with no job claimed, gmod is not asked', async ($, on) => {
+  const NONE = JSON.stringify({ ...JSON.parse(STATUS), claim: null, jobs: JSON.parse(STATUS).jobs.map((j: { state: string }) => ({ ...j, state: j.state === 'claimed' ? 'ready' : j.state })) })
+  const seen = await started($, on, () => ({ exitCode: 0, stdout: NONE }))
+  await $.tool.call({ tool: 'Bash', command: 'echo x > README.md' })
+  expect(seen.runs.some(r => r.args[0] === 'notice')).toBe(false)
+})
+
 test('a governed session checks main in the background', async ($, on) => {
   const every: number[] = []
   on('clock.every', (_, e) => {
