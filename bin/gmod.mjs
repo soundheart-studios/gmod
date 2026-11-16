@@ -75,6 +75,8 @@ const HELP = `gmod: planned work with proof, on plain git
   gmod sweep                      let go of claims on jobs done on main
   gmod version                    which gmod this is (also --version)
   gmod capabilities               the protocol it speaks and what it enforces (--json: the record faces like Skiff read)
+  gmod mcp                        the agent's tools as an MCP server on stdio, for hosts other than
+                                  Claude Code (Codex): the mod's tools, plus board
 
   gmod adr propose '<draft json>'  draft a decision: {title, scope, context, decision, rules: [{level, text}], supersedes}
   gmod adr drafts                 the drafts waiting for a person
@@ -200,6 +202,11 @@ async function main() {
   if (cmd === 'capabilities') {
     const c = capsLib.capabilities();
     return out(flags, c, capsLib.describe(c));
+  }
+  // The agent's tools over MCP: each call finds its own repository (its dir).
+  if (cmd === 'mcp') {
+    const { serve } = await import('../lib/mcp.mjs');
+    return serve();
   }
   // Server side: neither needs a work tree.
   if (cmd === 'receive') {
