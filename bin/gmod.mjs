@@ -14,6 +14,7 @@ import * as managedLib from '../lib/managed.mjs';
 import * as stampLib from '../lib/stamp.mjs';
 import * as decideLib from '../lib/decide.mjs';
 import * as requestsLib from '../lib/requests.mjs';
+import * as renderLib from '../lib/render.mjs';
 import { createInterface } from 'node:readline/promises';
 import { readFileSync as readSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -25,6 +26,9 @@ const HELP = `gmod: planned work with proof, on plain git
   gmod plan                       every job and its state
   gmod state [--no-sync]          the plan and its progress (--json: the record faces like Skiff read)
   gmod signals [--no-sync]        what needs a person (--json: the signals faces like Skiff read)
+  gmod board [--width <n>] [--no-sync]
+                                  the plan as plain text (what the pane shows), then any proposal
+                                  and decision card with the gmod decide commands; --json: { lines }
   gmod stamp                      the change stamp: read state and signals again when it differs
   gmod next                       the first job ready to take
   gmod claim <job>                take a job (a git ref on origin; first push wins)
@@ -354,6 +358,14 @@ async function main() {
       const list = signalsLib.signalsFrom(st, { project: projectName(root) });
       // Workers are a face's own: gmod runs none, so the list is empty.
       return out(flags, { v: signalsLib.SIGNALS_VERSION, stamp: at, signals: list, workers: [] }, signalsLib.describe(list));
+    }
+    case 'board': {
+      const st = core.status(root, { sync: !flags['no-sync'] });
+      if (!st.governed && !st.proposal) throw new core.GmodError(`no ${core.PLAN} here (gmod init)`);
+      const width = flags.width === undefined ? renderLib.WIDTH : Number(flags.width);
+      if (!Number.isFinite(width) || width < 20) throw new core.GmodError('--width takes a number of columns, 20 or more');
+      const lines = renderLib.boardWithCards(st, { width });
+      return out(flags, { lines }, lines.join('\n'));
     }
     case 'next': {
       const plan = core.planFromDisk(root);
