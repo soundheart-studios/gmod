@@ -77,6 +77,8 @@ const HELP = `gmod: planned work with proof, on plain git
   gmod capabilities               the protocol it speaks and what it enforces (--json: the record faces like Skiff read)
   gmod mcp                        the agent's tools as an MCP server on stdio, for hosts other than
                                   Claude Code (Codex): the mod's tools, plus board
+  gmod hook codex                 Codex's command hook: reads one event on stdin and refuses
+                                  what the Claude Code mod refuses
 
   gmod adr propose '<draft json>'  draft a decision: {title, scope, context, decision, rules: [{level, text}], supersedes}
   gmod adr drafts                 the drafts waiting for a person
@@ -207,6 +209,12 @@ async function main() {
   if (cmd === 'mcp') {
     const { serve } = await import('../lib/mcp.mjs');
     return serve();
+  }
+  // A host's command hook: one event on stdin, the answer on stdout (Codex).
+  if (cmd === 'hook') {
+    if (args[0] !== 'codex') throw new core.GmodError('gmod hook codex');
+    const { codex } = await import('../lib/hook.mjs');
+    return codex();
   }
   // Server side: neither needs a work tree.
   if (cmd === 'receive') {
