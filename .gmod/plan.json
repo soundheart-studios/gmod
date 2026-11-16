@@ -68,7 +68,10 @@
     "checks-from-app": "node --test test/checks-from-app.test.mjs",
     "owners": "node --test test/owners.test.mjs",
     "signed-decisions": "node --test test/signed-decisions.test.mjs",
-    "land-person": "node --test test/land-person.test.mjs"
+    "land-person": "node --test test/land-person.test.mjs",
+    "commit-without-forge": "node --test test/commit-without-forge.test.mjs",
+    "shell-writes-noticed": "node --test test/shell-writes-noticed.test.mjs",
+    "bootstrap-and-scope": "node --test test/bootstrap-and-scope.test.mjs"
   },
   "jobs": [
     {
@@ -1752,7 +1755,8 @@
       ],
       "tests": [
         "test/codex-context.test.mjs",
-        "test/mod.test.tsx"
+        "test/mod.test.tsx",
+        "test/codex-guards.test.mjs"
       ],
       "done_when": [
         {
@@ -2135,6 +2139,106 @@
           "text": "the mark is read from the base's plan, and any other value is not a valid plan",
           "check": "land-person"
         }
+      ]
+    },
+    {
+      "id": "codex-tool-approval",
+      "phase": "codex",
+      "goal": "Codex runs gmod's tools without asking each time",
+      "brief": "Found in a live run (codex-cli 0.167, codex exec): every mcp__gmod__ call was refused with 'MCP tool call requires approval, but approval policy is never', so a headless Codex agent can't work a job at all; interactively the person would be asked on every call. Verified fix: \"default_tools_approval_mode\": \"approve\" on the gmod server in codex/mcp.json (then next, claim, status, check and commit ran). Approving gmod's tools by default is safe because each enforces its own rules (claim, red then green, files) and none of them decides for the person. Also from the same run: an agent that was refused an unrelated MCP tool (another server, not gmod) stopped the whole job, following the Codex work skill's 'if anything is denied … stop'. In codex/skills/work/SKILL.md make that rule about what the job needs: a refusal by gmod, its hooks or the sandbox of something the job needs stops the job; a refused tool the job doesn't need is skipped and mentioned. Keep the Claude skill (skills/work) as it is. test/codex-plugin.test.mjs: the gmod server in codex/mcp.json approves its tools by default; the work skill keeps the rule that a refusal by gmod stops the job.",
+      "files": [
+        "codex/mcp.json",
+        "codex/skills/work/SKILL.md"
+      ],
+      "tests": [
+        "test/codex-plugin.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "codex/mcp.json approves the gmod server's tools by default",
+          "check": "codex-plugin"
+        },
+        {
+          "text": "the Codex work skill stops a job on a refusal by gmod, its hooks or the sandbox, and only skips a refused tool the job doesn't need",
+          "check": "codex-plugin"
+        }
+      ]
+    },
+    {
+      "id": "commit-without-forge",
+      "phase": "codex",
+      "goal": "A commit with no forge reports the branch ready",
+      "brief": "Found in the live Codex run: with origin a plain git path (no GitHub, GitLab or Gitea), `gmod commit` committed and pushed gmod/<job> and then failed with \"can't read the forge from origin <path>\" when opening the pull request, so the agent reported the job as failed. The work skills promise 'Without a forge (a local origin), mcp__gmod__commit still commits and pushes; say the branch is ready'. In bin/gmod.mjs's commit (and lib/ci.mjs detectForge's callers there), when the forge can't be told from origin, finish successfully after the push with: '<job>: committed and pushed gmod/<job>; origin is no forge gmod knows, so no pull request was opened: the branch is ready'. Any other pull-request error still fails as now. `gmod pr` run on its own keeps its current error.",
+      "files": [
+        "bin/gmod.mjs",
+        "lib/ci.mjs"
+      ],
+      "tests": [
+        "test/commit-without-forge.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "gmod commit in a repository whose origin is a local path commits, pushes and exits 0 saying the branch is ready and no pull request was opened",
+          "check": "commit-without-forge"
+        }
+      ]
+    },
+    {
+      "id": "shell-writes-noticed",
+      "phase": "codex",
+      "after": [
+        "codex-tool-approval",
+        "codex-context"
+      ],
+      "goal": "Files changed outside the job by shell are caught",
+      "brief": "Found in the live Codex run: asked to add a line to README.md (outside the job), the agent ran `printf 'hello\\n' >> README.md` and it went through. gmod's shell rules guard the plan, gmod's records, claims, commits and merges, not ordinary file writes, and Codex edits through the shell far more often than Claude does. Reading every possible write from a command's text can't be done; what changed can be seen afterwards. Add lib/core.mjs strayFiles(root): with a job claimed in this worktree, the changed and untracked paths (as jobPaths reads them) that are outside the job's files, tests and journal, and not in .gitignore. After a shell command: in Codex (lib/hook.mjs, PostToolUse on Bash) return as additionalContext 'gmod: this command changed files outside <job>: <paths>. Put them back (git checkout -- <path>, or remove a new file) before going on; they can't be committed with this job'; in Claude Code (hooks/register.tsx Bash hook, after the command ran) add the same line to the result's context. Only when the set of stray files changed since the last time it was said (kept in the worktree's gmod folder), so it isn't repeated on every step. With no claim, nothing is said (the commit gate already refuses).",
+      "files": [
+        "lib/core.mjs",
+        "lib/hook.mjs",
+        "hooks/register.tsx"
+      ],
+      "tests": [
+        "test/shell-writes-noticed.test.mjs",
+        "test/mod.test.tsx"
+      ],
+      "done_when": [
+        {
+          "text": "after a shell command writes a file outside the claimed job, Codex's PostToolUse answer names the file and how to put it back, once",
+          "check": "shell-writes-noticed"
+        },
+        {
+          "text": "strayFiles lists changed and new files outside the job's files, tests and journal, and nothing without a claim",
+          "check": "shell-writes-noticed"
+        }
+      ]
+    },
+    {
+      "id": "bootstrap-and-scope",
+      "phase": "codex",
+      "goal": "Guards don't block starting a repo or other repos",
+      "brief": "Two misfires found while setting up the live Codex test. (1) A new repository can't get its first commit from an agent's session: `gmod init` writes .gmod/plan.json, and the commit gate then refuses every commit ('claim a job first'), yet nothing can be claimed until a plan is committed. The CI gate already treats a base with no plan as ungoverned; make the local gate agree: in lib/core.mjs gateCommit, when HEAD has no commit yet (an unborn branch), allow it with the reason 'the first commit: nothing is governed yet; CI judges what comes after'. (2) The shell rule that refuses writing .gmod/plan.json matches the text anywhere, so it refused writes to a plan in an unrelated scratch repository. Make it about this repository: lib/shell.mjs gains planTargets(cmd, cwd) (the plan paths a command writes, resolved like commitDirs/resolveDir), and the Claude Bash hook (hooks/register.tsx) and Codex's (lib/hook.mjs) refuse only when one resolves to the plan of a repository that is governed (its .gmod/plan.json is committed on HEAD) and isn't allowed by /gmod allow-plan; writesPlan stays exported for compatibility. A plan written for a brand-new repository (no commit yet) is not refused.",
+      "files": [
+        "lib/core.mjs",
+        "lib/shell.mjs",
+        "lib/hook.mjs",
+        "hooks/register.tsx"
+      ],
+      "tests": [
+        "test/bootstrap-and-scope.test.mjs",
+        "test/mod.test.tsx"
+      ],
+      "done_when": [
+        {
+          "text": "the commit gate allows the first commit of a repository with no commits yet, and still refuses an unclaimed commit after that",
+          "check": "bootstrap-and-scope"
+        },
+        {
+          "text": "writing .gmod/plan.json is refused in a governed repository and allowed in one with no committed plan, judged by where the path resolves",
+          "check": "bootstrap-and-scope"
+        }
+      ],
+      "after": [
+        "shell-writes-noticed"
       ]
     }
   ],
