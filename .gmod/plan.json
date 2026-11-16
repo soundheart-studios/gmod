@@ -50,7 +50,25 @@
     "fixtures": "node --test test/fixtures.test.mjs test/surfaces-doc.test.mjs",
     "ci-pin-1-8-0": "grep -q \"uses: soundheart-studios/gmod@v1.8.0\" .github/workflows/gmod.yml",
     "status-brief": "node --test test/status-brief.test.mjs",
-    "ci-pin-1-8-1": "grep -q \"uses: soundheart-studios/gmod@v1.8.1\" .github/workflows/gmod.yml"
+    "ci-pin-1-8-1": "grep -q \"uses: soundheart-studios/gmod@v1.8.1\" .github/workflows/gmod.yml",
+    "shell-rules": "node --test test/shell-rules.test.mjs",
+    "render": "node --test test/render.test.mjs",
+    "mcp": "node --test test/mcp.test.mjs",
+    "codex-guards": "node --test test/codex-guards.test.mjs",
+    "codex-context": "node --test test/codex-context.test.mjs",
+    "codex-plugin": "node --test test/codex-plugin.test.mjs",
+    "watch": "node --test test/watch.test.mjs",
+    "codex-docs": "node --test test/codex-docs.test.mjs",
+    "foreign-subjects": "node --test test/foreign-subjects.test.mjs",
+    "prove-each-check": "node --test test/prove-each-check.test.mjs",
+    "regress-checks": "node --test test/regress-checks.test.mjs",
+    "review-verdict": "node --test test/review-verdict.test.mjs",
+    "checks-clean-env": "node --test test/checks-clean-env.test.mjs",
+    "agent-credentials": "node --test test/agent-credentials.test.mjs",
+    "checks-from-app": "node --test test/checks-from-app.test.mjs",
+    "owners": "node --test test/owners.test.mjs",
+    "signed-decisions": "node --test test/signed-decisions.test.mjs",
+    "land-person": "node --test test/land-person.test.mjs"
   },
   "jobs": [
     {
@@ -1613,6 +1631,511 @@
           "check": "ci-pin-1-8-1"
         }
       ]
+    },
+    {
+      "id": "shell-rules-shared",
+      "phase": "host-neutral",
+      "goal": "Shell rules any host can run, tested in CI",
+      "brief": "hooks/shell.ts holds the rules that read a shell command (writesPlan, writesRecords, movesClaims, decision, decidesPlan, commitDirs, commitsAlone, resolveDir, mergesPr), but only Claude Code's engine can load it, and its tests (test/shell.test.ts) never run in CI. Move the code, unchanged in behaviour, to lib/shell.mjs as plain JavaScript with the same exports, and make hooks/shell.ts a thin typed re-export of it (the way hooks/register.tsx already imports ../lib/signals.mjs). Add test/shell-rules.test.mjs for node --test, covering each export with the cases test/shell.test.ts has, so npm test and CI run them. Don't change any rule's behaviour here.",
+      "files": [
+        "lib/shell.mjs",
+        "hooks/shell.ts"
+      ],
+      "tests": [
+        "test/shell-rules.test.mjs",
+        "test/shell.test.ts"
+      ],
+      "done_when": [
+        {
+          "text": "lib/shell.mjs exports every shell rule and node's own test run proves each one on the cases the mod's tests use",
+          "check": "shell-rules"
+        }
+      ]
+    },
+    {
+      "id": "render-text",
+      "phase": "host-neutral",
+      "goal": "The plan, phases and proposals as plain text",
+      "brief": "Hosts without a pane (Codex) need what the pane shows, as text. Add lib/render.mjs: pure functions from the `gmod status` record to lines of plain text, with a `width` (default 80) and no colour codes. (1) board(status): the progress line (done of total, in progress, waiting); a 'Needs you' block from lib/signals.mjs signalsFrom, each with its signal id; then phases as the pane folds them (hooks/register.tsx phaseGroup/isPhaseOpen): a done or waiting phase is one line with its count or what it waits for, an active, stalled or first-ready phase is open with its outcome and one row per job: state icon, id, the five steps claim/test/commit/push/merge as filled or empty marks, and who holds it or what it waits for. A plan without phases lists jobs flat. (2) proposalCard(status): headline, then new and changed phases each with their jobs beneath (+ new with goal, criteria and files; ~ changed with field before → after; − dropped with why), warnings, assumptions, and last the exact commands to decide: `gmod decide <signal-id> approve --rev <rev>`, `ask-changes --note`, `reject`. (3) adrCard(draft): title, context, decision, must/should rules, scope, and its decide commands. bin/gmod.mjs: new `gmod board [--width n]` prints board plus any proposal and ADR cards; `--json` prints { lines }. Leave `gmod plan`, `gmod proposal` and `gmod status` output as they are (protocol v1 is additive).",
+      "files": [
+        "lib/render.mjs",
+        "bin/gmod.mjs"
+      ],
+      "tests": [
+        "test/render.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "board shows progress, what needs a person with signal ids, and phases folded or open with a row of step marks per job, within the given width",
+          "check": "render"
+        },
+        {
+          "text": "the proposal card lists new, changed and dropped phases and jobs with criteria, warnings and assumptions, and ends with the gmod decide commands for its signal id and rev",
+          "check": "render"
+        },
+        {
+          "text": "gmod board prints the board and any waiting proposal or decision card",
+          "check": "render"
+        }
+      ]
+    },
+    {
+      "id": "mcp-server",
+      "phase": "host-neutral",
+      "after": [
+        "render-text"
+      ],
+      "goal": "gmod's agent tools over MCP, for any host",
+      "brief": "In Claude Code the agent's tools are registered by the mod (hooks/register.tsx, $.tool.register). Other hosts need them as an MCP server. Add `gmod mcp`: a stdio MCP server (JSON-RPC 2.0, newline-delimited; initialize, tools/list, tools/call, ping) in lib/mcp.mjs with no new dependency. It serves the same tools under the same names and input schemas as the mod: next, claim, check, commit, pr_status, release, status, note, ask, propose_job, edit_job, drop_job, propose_phase, edit_phase, drop_phase, describe_proposal, adr_propose (a host shows them as mcp__gmod__<name>). Each call runs the same gmod command the mod runs for it (status as `status --no-sync --brief`), in the `dir` argument when given, else the server's cwd; a refused command is a tool result with isError true and gmod's words. Two additions for hosts with no pane: a `board` tool returning lib/render.mjs board text, and describe_proposal, propose_job and adr_propose results end with the rendered card so the agent can show the person. Keep the tool names and schemas in one exported list in lib/mcp.mjs; the test reads hooks/register.tsx and fails if a tool the mod registers is missing from that list or named differently.",
+      "files": [
+        "lib/mcp.mjs",
+        "bin/gmod.mjs"
+      ],
+      "tests": [
+        "test/mcp.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "gmod mcp answers initialize and tools/list with every tool the mod registers, under the same names",
+          "check": "mcp"
+        },
+        {
+          "text": "tools/call claim, check and status run the same gmod commands in the given dir, and a refusal comes back as an error result with gmod's reason",
+          "check": "mcp"
+        },
+        {
+          "text": "describe_proposal's result ends with the proposal card as text",
+          "check": "mcp"
+        }
+      ]
+    },
+    {
+      "id": "codex-guards",
+      "phase": "codex",
+      "goal": "Codex is refused what Claude Code is refused",
+      "brief": "Codex runs command hooks: JSON on stdin (hook_event_name, cwd, tool_name, tool_input), and a PreToolUse hook denies by printing {\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"…\"}} (docs: learn.chatgpt.com/docs/hooks; shell calls match as Bash, patches as apply_patch). Add `gmod hook codex` (lib/hook.mjs, wired in bin/gmod.mjs) that reads one event from stdin and answers it. PreToolUse, Bash: the same order of refusals and the same words as the mod's Bash hook (hooks/register.tsx), from lib/shell.mjs: movesClaims, mergesPr, decision (plan, managed), writesRecords, writesPlan, commitsAlone, then gateCommit for each directory commitDirs names, resolved from the event's cwd. PreToolUse, apply_patch: read the paths the patch touches ('*** Add File:', '*** Update File:', '*** Delete File:', '*** Move to:') and refuse with guardFile's reason if any is outside the claimed job; the plan file is always refused here (Codex has no allow-plan). Anything else: exit 0 with no output. If the hook itself throws on a PreToolUse event, exit 2 with a one-line reason so the call is blocked, not waved through. Record real PreToolUse payloads from codex-cli 0.167 (one shell call, one apply_patch) under test/fixtures/codex/ and test against them, as test/fixtures/v1 does for Skiff.",
+      "files": [
+        "lib/hook.mjs",
+        "bin/gmod.mjs"
+      ],
+      "tests": [
+        "test/codex-guards.test.mjs",
+        "test/fixtures/codex/**"
+      ],
+      "done_when": [
+        {
+          "text": "a patch that touches a file outside the claimed job, or the plan, is denied with gmod's reason; one inside the job passes",
+          "check": "codex-guards"
+        },
+        {
+          "text": "a shell command that approves the plan, merges a pull request, moves a claim or commits before red then green is denied in the mod's words",
+          "check": "codex-guards"
+        },
+        {
+          "text": "a hook that fails on a tool call blocks it",
+          "check": "codex-guards"
+        }
+      ]
+    },
+    {
+      "id": "codex-context",
+      "phase": "codex",
+      "after": [
+        "codex-guards"
+      ],
+      "goal": "Codex agents are told the routine and the news",
+      "brief": "The mod tells Claude's agent the routine and its claim in the prompt (ROUTINE and FOR_SUBAGENTS in hooks/register.tsx, prompt.compose) and passes on notices after a step (withNotice: main moved under the job, a person's answer). Codex has no prompt hook, but SessionStart, SubagentStart and PostToolUse hooks add context (plain stdout or hookSpecificOutput.additionalContext). Extend `gmod hook codex` (lib/hook.mjs): SessionStart in a governed repository prints the routine, the claim held in cwd (job, goal, files, done-when, the ADR rules that bind it) or the next ready job, and one line when a proposal or decision waits for the person, with the words that it is decided with `gmod decide` in the person's own terminal, never by the agent. SubagentStart prints the subagent routine. PostToolUse prints what `gmod notice <cwd>` says, when it says anything. An ungoverned repository gets no output at all. Move the two routine texts to lib/routine.mjs so the mod and the hook share one copy (hooks/register.tsx imports them); the Codex wording names no pane and no slash command.",
+      "files": [
+        "lib/hook.mjs",
+        "lib/routine.mjs",
+        "hooks/register.tsx"
+      ],
+      "tests": [
+        "test/codex-context.test.mjs",
+        "test/mod.test.tsx"
+      ],
+      "done_when": [
+        {
+          "text": "SessionStart in a governed repository gives the routine and the claimed job's files, criteria and binding ADR rules; an ungoverned one gives nothing",
+          "check": "codex-context"
+        },
+        {
+          "text": "PostToolUse passes on a moved-main notice or a person's answer once",
+          "check": "codex-context"
+        },
+        {
+          "text": "the mod and the Codex hook take the routine from the same module",
+          "check": "codex-context"
+        }
+      ]
+    },
+    {
+      "id": "codex-plugin",
+      "phase": "codex",
+      "goal": "gmod installs in Codex as a plugin",
+      "brief": "Package gmod for Codex (docs: learn.chatgpt.com, plugins/build). Codex's default hooks file is hooks/hooks.json, which is already Claude Code's here, so the Codex plugin gets its own root: codex/. Add codex/plugin.json (name gmod, version, description, interface block), codex/mcp.json (mcpServers.gmod runs `gmod mcp`), codex/hooks/hooks.json (PreToolUse matching Bash and apply_patch, SessionStart, SubagentStart, PostToolUse, each a command hook running `gmod hook codex`), and codex/skills/{plan,work,adr,ci}/SKILL.md: the four skills in Codex's words. They name the same mcp__gmod__ tools; where Claude's skills say the pane or /gmod approve, these say to show the person the card the tool returned (or mcp__gmod__board) and that the person decides with `gmod decide <id> <action>` or `gmod watch` in a terminal of their own. Add .agents/plugins/marketplace.json listing the plugin with source ./codex. The plugin calls `gmod` from PATH (npm link, or the installed release); say so in the plugin description. The test checks every manifest parses, the hooks and MCP server run the gmod commands above, every tool a skill names exists in lib/mcp.mjs's list, and no Codex skill mentions the pane, /gmod or allow-plan.",
+      "files": [
+        "codex/**",
+        ".agents/plugins/marketplace.json"
+      ],
+      "tests": [
+        "test/codex-plugin.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "the Codex plugin's manifest, MCP config and hooks parse and run gmod mcp and gmod hook codex",
+          "check": "codex-plugin"
+        },
+        {
+          "text": "the four Codex skills name only tools the MCP server serves and never the pane or a slash command",
+          "check": "codex-plugin"
+        }
+      ]
+    },
+    {
+      "id": "watch",
+      "phase": "codex-person",
+      "goal": "A live plan view with decisions, in any terminal",
+      "brief": "Codex gives gmod no pane, so the person needs one of their own: `gmod watch`, run in a second terminal or a tmux split beside any agent. lib/watch.mjs: on a TTY it draws lib/render.mjs board, and under it the open proposal or decision card, redrawing when `gmod stamp` changes (looked at every second) and syncing with origin every 30 seconds. Keys: up/down move over jobs and signals, enter folds or opens a phase or a job (goal, criteria, files, last journal lines), and on a signal the keys it offers: a approve, c ask for changes (then a typed note), r reject, on an ADR draft a accept and r reject, on a request a typed answer; q quits. A decision goes through lib/decide.mjs decide with via 'watch' and the rev that is on screen, so a proposal that changed since it was drawn is refused and redrawn; decide's refusal under an agent's environment stays as it is, so an agent that starts gmod watch can decide nothing. Without a TTY, `gmod watch` prints the board once and exits. Keep the logic testable without a terminal: a pure step(state, key) that returns the next state and at most one action, and view(state, status, width) that returns lines; the TTY loop only reads keys and writes lines.",
+      "files": [
+        "lib/watch.mjs",
+        "bin/gmod.mjs"
+      ],
+      "tests": [
+        "test/watch.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "the view shows the board and the waiting proposal card, and moving and opening a phase or job changes what is shown",
+          "check": "watch"
+        },
+        {
+          "text": "approve from the view decides through gmod decide with via watch and the rev on screen, and is refused when the proposal changed or an agent's environment is set",
+          "check": "watch"
+        },
+        {
+          "text": "without a terminal gmod watch prints the board once",
+          "check": "watch"
+        }
+      ]
+    },
+    {
+      "id": "codex-docs",
+      "phase": "codex-person",
+      "goal": "Docs and capabilities say how gmod works in Codex",
+      "brief": "Add docs/codex.md: installing the plugin in Codex (the marketplace, `gmod` on PATH, reviewing and trusting the hooks with /hooks), what is the same as in Claude Code (the tools, the refusals, red then green, mcp__gmod__commit, CI), and what differs: no pane, so the plan and proposals are text (gmod board, the card a tool returns) and the person decides in `gmod watch` or with `gmod decide`; no allow-plan; a PreToolUse hook is a guardrail, and CI's gate stays the hard line. Link it from README.md (Install, and 'Works with what you have') and docs/agents.md, and add the Codex limits to docs/limits.md (hooks must be trusted once and again after each gmod upgrade; an untrusted hook is skipped, so nothing is refused locally until it is). lib/capabilities.mjs: add ENFORCES entries of kind 'mod' for the Codex hooks (edits outside the job, the shell rules, the commit gate) naming lib/hook.mjs, and add 'board' to COMMANDS; update test/fixtures/v1 only if a recorded shape gains a field.",
+      "files": [
+        "docs/codex.md",
+        "README.md",
+        "docs/agents.md",
+        "docs/limits.md",
+        "lib/capabilities.mjs"
+      ],
+      "tests": [
+        "test/codex-docs.test.mjs",
+        "test/capabilities.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "docs/codex.md covers install, hook trust, the text plan view and deciding with gmod watch or gmod decide, and README and docs/limits.md point to it",
+          "check": "codex-docs"
+        },
+        {
+          "text": "gmod capabilities lists what the Codex hooks enforce and the board command",
+          "check": "codex-docs"
+        }
+      ]
+    },
+    {
+      "id": "release-1-9",
+      "phase": "codex-person",
+      "after": [
+        "watch",
+        "codex-docs"
+      ],
+      "goal": "Release gmod 1.9.0 with Codex support",
+      "brief": "Bump to 1.9.0 as 1.8.1 did: npm version 1.9.0 --no-git-tag-version, .claude-plugin/plugin.json and codex/plugin.json by hand, test/release.test.mjs at 1.9.0 (and that codex/plugin.json carries the same version), CHANGELOG.md 1.9.0 entry: gmod in OpenAI Codex (plugin, MCP tools, hooks), gmod board and gmod watch, shell rules tested in CI. After landing: tag v1.9.0, publish the GitHub release, move the installed gmod, tell the open sessions.",
+      "files": [
+        "package.json",
+        "package-lock.json",
+        ".claude-plugin/plugin.json",
+        "codex/plugin.json",
+        "CHANGELOG.md"
+      ],
+      "tests": [
+        "test/release.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "package.json, package-lock.json and both plugin manifests say 1.9.0, and CHANGELOG.md has a 1.9.0 entry",
+          "check": "release"
+        }
+      ]
+    },
+    {
+      "id": "foreign-subjects",
+      "phase": "gate-truth",
+      "goal": "One job's pull request can't finish another job",
+      "brief": "A job is done once any commit on main has a subject starting '<id>:' (lib/core.mjs doneJobs), and pull requests land as merge commits, so every commit on a job's branch reaches main. The gate (verify, jobFindings) never looks at those subjects: a commit titled 'b: …' inside job a's pull request marks b done and unblocks whatever waits for it, with none of b's proof. In jobFindings, read the subjects of the non-merge commits in mb..head and fail when one starts with the id of a different job in the base's plan ('names job b, but this pull request is job a's'), or with a prefix gmod writes itself: 'plan:' or 'managed:'. Apply the same to plan, ADR, managed and CI changes: none of their commits may start with a job's id, except a CI change made as that job (isCiJob). In validatePlan, refuse the job ids 'plan' and 'managed' for new plans; a plan already on main that has one keeps loading (report it as a warning in warnings(), not a validation failure). doneJobs itself stays as it is: existing history must keep reading as done.",
+      "files": [
+        "lib/core.mjs"
+      ],
+      "tests": [
+        "test/foreign-subjects.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "the gate refuses a job's pull request carrying a commit whose subject names another job, or starts with plan: or managed:",
+          "check": "foreign-subjects"
+        },
+        {
+          "text": "a plan or decision change whose commit subject starts with a job's id is refused",
+          "check": "foreign-subjects"
+        },
+        {
+          "text": "a new job may not be called plan or managed",
+          "check": "foreign-subjects"
+        }
+      ]
+    },
+    {
+      "id": "prove-each-check",
+      "phase": "gate-truth",
+      "after": [
+        "foreign-subjects"
+      ],
+      "goal": "Every check must fail without the change",
+      "brief": "lib/core.mjs prove() puts the job's code back and passes when at least one criterion fails (`without.some(r => !r.pass)`): a job with five criteria is proven even if four of its checks pass whatever the code does. Require every distinct check command among the job's done_when to fail with the code put back; name each one that still passes in the gate's finding ('\"<criterion>\" passes without the change: its check proves nothing'). Some criteria are honest guards that hold before and after ('the full status is unchanged'): a done_when entry may say \"keeps\": true, which must pass both with and without the change and is left out of the must-fail rule; a job needs at least one criterion that isn't a keeps. validatePlan accepts the field and refuses a job whose criteria are all keeps. The local commit gate (gateCommit) is unchanged. warnings() tells the planner when two criteria of one job share a check, since they can only fail together. Jobs already done are not re-judged.",
+      "files": [
+        "lib/core.mjs"
+      ],
+      "tests": [
+        "test/prove-each-check.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "the proof fails, naming the criterion, when one of a job's checks still passes with the code put back",
+          "check": "prove-each-check"
+        },
+        {
+          "text": "a criterion marked keeps must pass both ways, and a job of only keeps criteria is not a valid plan",
+          "check": "prove-each-check"
+        }
+      ]
+    },
+    {
+      "id": "regress-checks",
+      "phase": "gate-truth",
+      "after": [
+        "prove-each-check"
+      ],
+      "goal": "The gate re-runs finished jobs' checks a change touches",
+      "brief": "A job's pull request runs only its own checks (lib/core.mjs jobFindings, prove), so it can break what an earlier job proved and still land; only GitLab looks afterwards. In jobFindings, after the proof, run at the pull request's head the checks of jobs already done on the base whose files, tests or the plan's contracts overlap the files this pull request changed (the same globs allowed() and matches() use), each distinct command once and never one the job's own proof just ran. A failing one fails the gate: '\"<criterion>\" of <job>, proven earlier, fails with this change'. The plan may set \"regress\": \"overlap\" (the default), \"all\" (every done job's checks) or \"off\"; validatePlan accepts only those. Run them in the proof's scratch checkout before its code is put back, so no second checkout is made, and report how many ran in a passing finding.",
+      "files": [
+        "lib/core.mjs"
+      ],
+      "tests": [
+        "test/regress-checks.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "a pull request that breaks a finished job's check on files it changed is refused, naming that job and criterion",
+          "check": "regress-checks"
+        },
+        {
+          "text": "each distinct command runs once, regress all runs every finished job's checks, and regress off runs none",
+          "check": "regress-checks"
+        }
+      ]
+    },
+    {
+      "id": "review-verdict",
+      "phase": "gate-truth",
+      "goal": "The review's verdict is computed, not taken on trust",
+      "brief": "ci/review.mjs exits on the model's own `overall` and checks only the answer's shape: a model that fails a criterion but writes overall 'pass' passes, and one that answers no criteria at all passes too. (1) Compute the overall in code: fail if any criterion, tests_are_real, stays_within_goal or ADR verdict is fail; else concern if any is concern; else pass. Print the computed one; when it differs from the model's, say so in the report. Do the same for a governance review from weakens. (2) Coverage: the answer must hold one criteria entry per done_when of the job and one adrs entry per governing ADR id; a missing one counts as unanswered (the existing fail-closed path), naming what is missing. (3) Shortening: a file is treated as generated only when its path says so (zz_generated) or the 'Code generated … DO NOT EDIT.' / controller-gen header is already in the file at the merge base; a new or newly-marked file is shown in full, up to FILE_LIMIT. When any non-data file was cut at FILE_LIMIT, the computed overall is at least concern and the report says the reviewer did not see all of it.",
+      "files": [
+        "ci/review.mjs"
+      ],
+      "tests": [
+        "test/review-verdict.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "a review whose items include a fail blocks even when the model's overall says pass",
+          "check": "review-verdict"
+        },
+        {
+          "text": "an answer missing a criterion or a governing ADR is treated as no answer and stops a blocking review",
+          "check": "review-verdict"
+        },
+        {
+          "text": "a new file carrying a generated-code header is shown to the reviewer in full, and a file cut for size makes the overall at least concern",
+          "check": "review-verdict"
+        }
+      ]
+    },
+    {
+      "id": "checks-clean-env",
+      "phase": "trust-split",
+      "goal": "Checks run without CI's secrets in their environment",
+      "brief": "lib/core.mjs runChecks and teardown start `sh -c <check>` with the whole environment of the gmod process. In CI that holds every secret the action was given (action.yml: GMOD_GITHUB_TOKEN, GMOD_FORGE_TOKEN, GMOD_REVIEW_KEY, ANTHROPIC_API_KEY, GMOD_AGENT_KEY, GMOD_APP_KEY; GMOD_TOKEN on the gate step), so a pull request's own test code can read them. Build the environment for checks and teardown from a list instead: PATH, HOME, USER, SHELL, LANG, LC_*, TZ, TMPDIR, TERM, CI, NODE_OPTIONS, and whatever the plan names in a new optional \"check_env\": [\"NAME\", …] (validatePlan: a list of variable names; a name matching /TOKEN|KEY|SECRET|PASSWORD/i or starting GMOD_ is refused, with the reason). Everything else is left out, in CI and at the desk alike, so a check behaves the same in both. git's own GIT_CONFIG_* variables pass through (the tests' setup relies on them). Say in the gate's report, as an info line, which extra variables the plan passed.",
+      "files": [
+        "lib/core.mjs"
+      ],
+      "tests": [
+        "test/checks-clean-env.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "a check sees none of GMOD_TOKEN, GMOD_GITHUB_TOKEN, GMOD_FORGE_TOKEN, GMOD_APP_KEY, GMOD_AGENT_KEY, GMOD_REVIEW_KEY or ANTHROPIC_API_KEY, in check, prove and the moved-main run",
+          "check": "checks-clean-env"
+        },
+        {
+          "text": "a variable named in the plan's check_env reaches the check, and a secret-like name there is not a valid plan",
+          "check": "checks-clean-env"
+        }
+      ]
+    },
+    {
+      "id": "agent-own-credentials",
+      "phase": "trust-split",
+      "goal": "Agents in CI hold only a worker's credentials",
+      "brief": "lib/agent.mjs runAgent starts Claude Code with bypassPermissions and `{ ...process.env, ...env }`: the agent holds the token that reports gmod / gate and gmod / review and merges, the reviewer's key, the forge token and the App's private key, and ci/action.mjs has written the App's token into .git/config (http extraheader) where the agent can read it. (1) runAgent builds the agent's environment from a list: PATH, HOME, USER, LANG, LC_*, TMPDIR, TERM, CI, the forge's own GITHUB_*/GITEA_*/CI_* run variables, the agent's Anthropic key, IS_SANDBOX, GMOD_AGENT=1 and one worker token (GH_TOKEN, GITEA_TOKEN or GITLAB_TOKEN); nothing else. (2) A new action input `agent-token` (action.yml, passed as GMOD_AGENT_TOKEN): the worker token, for a credential that can push gmod/* branches and open pull requests but has no statuses or administration permission. ci/action.mjs work() and fix() use it for the agent and for the git remote during the agent's run (set the extraheader to the worker token before the agent starts, put the verifier's back after); with no agent-token they fall back to today's token and print one line saying agents hold the verifier's token. (3) ci/gitlab.mjs passes the agent only GMOD_AGENT_TOKEN when the variable is set, the same fallback otherwise. (4) lib/setup.mjs: `gmod setup --agents` leaves 'add GMOD_AGENT_TOKEN' in `left` and doctor reports `missing` for a new check `agent-token` when agents are on without it; the workflow it writes passes agent-token: ${{ secrets.GMOD_AGENT_TOKEN }}.",
+      "files": [
+        "lib/agent.mjs",
+        "ci/action.mjs",
+        "ci/gitlab.mjs",
+        "action.yml",
+        "lib/setup.mjs"
+      ],
+      "tests": [
+        "test/agent-credentials.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "the agent's environment carries its own key and the worker token and none of the verifier's token, the forge token, the reviewer's key or the App's key",
+          "check": "agent-credentials"
+        },
+        {
+          "text": "during an agent's run the repository's git config holds the worker token, not the verifier's",
+          "check": "agent-credentials"
+        },
+        {
+          "text": "setup with agents writes agent-token into the workflow, and doctor says when agents run without one",
+          "check": "agent-credentials"
+        }
+      ]
+    },
+    {
+      "id": "checks-from-app",
+      "phase": "trust-split",
+      "after": [
+        "agent-own-credentials"
+      ],
+      "goal": "Only gmod's App can report the required checks",
+      "brief": "gmod / gate and gmod / review are commit statuses, and main's ruleset (lib/ci.mjs githubRuleset) requires them by name only, so any token with statuses: write can report them green. GitHub lets a required check name its source: required_status_checks entries take integration_id. When the repository runs gmod as its App (`gmod setup --app`, app-id in the workflow), githubRuleset adds the App's id to both required checks, and githubProtection (the gate's look at main's live rules) reports the rules as weaker than .gmod/protect.json when an App is configured and a required check isn't pinned to it. .gmod/protect.json gains an optional \"app\": <id> so the declaration says who reports; protectSpec reads it, and `gmod ci protect` and setup write it. lib/setup.mjs doctor adds a check `check-source`: ok when pinned, missing with the fix `gmod app create` when the repository has no App (the checks can then be reported by anything holding a token with statuses: write). Gitea and GitLab have no such setting: doctor says so in one line and stays ok.",
+      "files": [
+        "lib/ci.mjs",
+        "lib/setup.mjs",
+        "lib/core.mjs"
+      ],
+      "tests": [
+        "test/checks-from-app.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "with an App configured the ruleset requires gate and review from that App's id, and the gate refuses when main's live rules don't pin them",
+          "check": "checks-from-app"
+        },
+        {
+          "text": "doctor reports check-source ok when pinned and missing, with the fix, when there is no App",
+          "check": "checks-from-app"
+        }
+      ]
+    },
+    {
+      "id": "owners-file",
+      "phase": "person-proof",
+      "goal": "The repository lists the keys that may decide",
+      "brief": "Who may decide is today a git email and a Decided-By trailer, both of which anyone can write. Give the repository a list of real keys: .gmod/owners, in git's allowed-signers format (one line per owner: an email, then an SSH public key), read from the base branch. New lib/owners.mjs: ownersAt(root, ref) parses it (null when absent; a malformed line is an error naming the line), and signedByOwner(root, commit, ref) answers { ok, by, reason } using `git verify-commit` with gpg.ssh.allowedSignersFile pointed at a temporary copy of the base's list, so nothing in the checked-out tree or the person's git config decides. bin/gmod.mjs: `gmod owners` lists them; `gmod owners add <email> <public-key-file>` and `gmod owners remove <email>` write the file and commit it alone as 'owners: add|remove <email>' with the decision trailers, refused under an agent as gmod decide is (lib/decide.mjs agentReason). In lib/core.mjs add .gmod/owners to the files that travel alone as a governance change (CI_FILES) and to what guardPath never lets an agent write. This job only adds the list and its reader; the gate starts requiring signatures in signed-decisions.",
+      "files": [
+        "lib/owners.mjs",
+        "bin/gmod.mjs",
+        "lib/core.mjs"
+      ],
+      "tests": [
+        "test/owners.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "a commit signed with a listed SSH key verifies as that owner against the base's list, and an unsigned one or one signed with an unlisted key does not",
+          "check": "owners"
+        },
+        {
+          "text": "gmod owners add commits the list alone and is refused under an agent's environment; an agent's edit of .gmod/owners is refused",
+          "check": "owners"
+        }
+      ]
+    },
+    {
+      "id": "signed-decisions",
+      "phase": "person-proof",
+      "after": [
+        "owners-file"
+      ],
+      "goal": "The gate lands only decisions an owner signed",
+      "brief": "The gate lets a plan, ADR, managed-switch or CI change through when it travels alone and is valid (lib/core.mjs verify), and any gmod/ branch then lands by itself: nothing proves a person approved it. When the base has .gmod/owners (lib/owners.mjs), verify requires every non-merge commit of such a change (modes plan, adr, managed, ci, and a change to .gmod/owners itself) to be signed by a key on the base's list: '<sha> isn't signed by an owner (.gmod/owners): a plan change is a person's decision'. A CI change made as a planned job (isCiJob) is exempt: the plan that planned it was signed. With no .gmod/owners on the base nothing changes except one info line in the gate's report: 'decisions aren't signed here: gmod owners add'. The first commit that adds .gmod/owners is accepted unsigned (there is no list yet to check against) and reported as such. Make the decision commands sign: commitPlan and rebrief (lib/core.mjs), acceptAdr (lib/adr.mjs) and commitSwitch (lib/managed.mjs) pass -S when the repository has an owners file, and when git can't sign they stop with how to set it up (git config gpg.format ssh, user.signingkey), never falling back to an unsigned commit. docs/limits.md: replace the 'against habit, not against intent' paragraph with what signing now holds, and say a hardware-backed key that needs a touch is what stops a program running as you.",
+      "files": [
+        "lib/core.mjs",
+        "lib/adr.mjs",
+        "lib/managed.mjs",
+        "docs/limits.md"
+      ],
+      "tests": [
+        "test/signed-decisions.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "with an owners list on the base, an unsigned plan, ADR, managed or CI change is refused by the gate and one signed by a listed key passes",
+          "check": "signed-decisions"
+        },
+        {
+          "text": "without an owners list the gate behaves as before and says decisions aren't signed",
+          "check": "signed-decisions"
+        },
+        {
+          "text": "approve, rebrief, adr accept and manage on sign their commit when an owners list exists, and stop rather than commit unsigned",
+          "check": "signed-decisions"
+        }
+      ]
+    },
+    {
+      "id": "land-person",
+      "phase": "person-proof",
+      "after": [
+        "signed-decisions"
+      ],
+      "goal": "A job can be marked to wait for a person",
+      "brief": "Every job on a gmod/ branch lands by itself once the gate and review pass. Some work should be read by a person first (auth, money, migrations). A job may say \"land\": \"person\" (validatePlan: only 'auto', the default, or 'person'). For such a job the checks run and report as always, but gmod doesn't merge it: ci/action.mjs checkAndLand stops after the review with 'passed; <job> waits for a person to merge it' and comments that once on the pull request; landOnGitea doesn't set merge-when-checks-succeed; ci/gitlab.mjs's land step skips it. The job is read from the base's plan, as the gate reads it, so a pull request can't change its own landing. after-merge's stuck report (ci/after-merge.mjs) doesn't call such a pull request stuck for having passed without merging; it says 'waits for a person' once after GMOD_STUCK_HOURS instead. The field shows in `gmod plan` and the proposal card's job lines (lib/core.mjs jobCard) so the person sees it when approving.",
+      "files": [
+        "lib/core.mjs",
+        "ci/action.mjs",
+        "ci/gitlab.mjs",
+        "ci/after-merge.mjs"
+      ],
+      "tests": [
+        "test/land-person.test.mjs"
+      ],
+      "done_when": [
+        {
+          "text": "a job marked land: person is gated and reviewed but not merged by gmod on GitHub, Gitea or GitLab, and its pull request says it waits for a person",
+          "check": "land-person"
+        },
+        {
+          "text": "the mark is read from the base's plan, and any other value is not a valid plan",
+          "check": "land-person"
+        }
+      ]
     }
   ],
   "phases": [
@@ -1724,6 +2247,54 @@
       "outcome": "An agent's mcp__gmod__status returns what it needs to work (its claim and the open jobs) in a few thousand tokens, however long the plan's history grows.",
       "after": [
         "release-1-8"
+      ]
+    },
+    {
+      "id": "host-neutral",
+      "title": "Host-neutral core",
+      "outcome": "gmod's shell rules, its agent tools and a text view of the plan work without Claude Code.",
+      "after": [
+        "lean-status"
+      ]
+    },
+    {
+      "id": "codex",
+      "title": "Codex works jobs",
+      "outcome": "An agent in OpenAI Codex does a gmod job with the same tools and the same refusals as one in Claude Code.",
+      "after": [
+        "host-neutral"
+      ]
+    },
+    {
+      "id": "codex-person",
+      "title": "Deciding beside Codex",
+      "outcome": "A person using Codex reads the plan, its phases and proposals as text and decides in a terminal of their own, and gmod 1.9.0 ships it.",
+      "after": [
+        "codex"
+      ]
+    },
+    {
+      "id": "gate-truth",
+      "title": "A truer gate",
+      "outcome": "The gate and the review hold what they claim: no job is finished by another's pull request, every check is proven, and the verdict is computed in code.",
+      "after": [
+        "codex-person"
+      ]
+    },
+    {
+      "id": "trust-split",
+      "title": "Verifier apart from worker",
+      "outcome": "Code under test and agents in CI never hold the credentials that report the checks or land the work.",
+      "after": [
+        "gate-truth"
+      ]
+    },
+    {
+      "id": "person-proof",
+      "title": "Provably a person",
+      "outcome": "A plan, decision or CI change lands only when signed by a key the repository's owners listed, and a job can be marked to wait for a person.",
+      "after": [
+        "trust-split"
       ]
     }
   ]
