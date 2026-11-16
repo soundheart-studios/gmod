@@ -310,7 +310,14 @@ async function main() {
     if (flags['no-pr']) return out(flags, r, lines.join('\n'));
     const plan = core.planFromDisk(root);
     const j = plan.jobs.find(x => x.id === r.job);
-    const pr = await ci.openPr(root, { url: flags.url, token: ci.giteaToken({ file: flags['token-file'], web: webOf(root, flags.url) }), main: plan.main ?? 'main', job: r.job, goal: j?.goal, brief: j?.brief, branch: r.branch, auto: true });
+    // No forge gmod knows (origin is a local path): the push is the end of it.
+    let forge;
+    try { forge = ci.detectForge(root, { url: flags.url }); } catch (e) {
+      if (!e.noForge) throw e;
+      lines.push(`${r.job}: committed and pushed ${r.branch}; origin is no forge gmod knows, so no pull request was opened: the branch is ready`);
+      return out(flags, { ...r, pr: null, forge: null }, lines.join('\n'));
+    }
+    const pr = await ci.openPr(root, { url: flags.url, token: ci.giteaToken({ file: flags['token-file'], web: webOf(root, flags.url) }), main: plan.main ?? 'main', job: r.job, goal: j?.goal, brief: j?.brief, branch: r.branch, auto: true, forge });
     lines.push(`${pr.existed ? 'already open' : 'opened'}: ${pr.url}`, 'lands by itself once its checks pass (gmod pr --status says how they went)');
     return out(flags, { ...r, pr }, lines.join('\n'));
   }
