@@ -129,7 +129,11 @@ test('other events and tools pass with no output', () => {
   try {
     allowed(hook(event('post-bash.json', w.dir, { tool_input: { command: 'gmod approve' } }), w.dir));
     allowed(hook(event('post-apply-patch.json', w.dir, patch('secret.txt')), w.dir));
-    allowed(hook(event('session-start.json', w.dir), w.dir));
+    // SessionStart in a governed repository now tells the routine
+    // (test/codex-context.test.mjs); here it only must never deny.
+    const start = hook(event('session-start.json', w.dir), w.dir);
+    assert.equal(start.code, 0, start.err);
+    assert.doesNotMatch(start.out, /"permissionDecision"/);
     allowed(hook(event('pre-bash.json', w.dir, { tool_name: 'WebSearch', tool_input: { command: 'gmod approve' } }), w.dir));
   } finally { w.done(); }
 });
