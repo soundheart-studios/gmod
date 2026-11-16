@@ -1,0 +1,6 @@
+# codex-context: Codex agents are told the routine and the news
+
+- 2026-11-16T16:14:52.680Z check: red (SessionStart in a governed repository gives the routine and the claimed job's files, criteria and binding ADR rules; an ungoverned one gives nothing; PostToolUse passes on a moved-main notice or a person's answer once; the mod and the Codex hook take the routine from the same module)
+- 2026-11-16T16:17:39.093Z check: green
+- 2026-11-16T16:24:40.228Z dev@soundheart.io: Routine texts moved to lib/routine.mjs (Claude ROUTINE/FOR_SUBAGENTS unchanged, plus CODEX_ROUTINE/CODEX_FOR_SUBAGENTS with no pane or slash command); register.tsx imports them; gmod hook codex now adds SessionStart/SubagentStart/PostToolUse context as hookSpecificOutput.additionalContext, governed repos only, never failing a non-PreToolUse event. codex-context is green and the mod tests pass (59/59), but npm test has 1 failure: test/codex-guards.test.mjs "other events and tools pass with no output" asserts SessionStart prints nothing, which this job's brief reverses. That file is outside this job's files, so I drafted edit_job adding test/codex-guards.test.mjs to its tests and did not commit: the person approves the change, then the old assertion is narrowed (SessionStart in a governed repo now speaks).
+- 2026-11-16T19:48:06.092Z check: green
