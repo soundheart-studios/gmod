@@ -1,0 +1,36 @@
+{
+  "name": "gmod",
+  "version": "1.8.1",
+  "description": "Planned work with proof in Codex: claim a job, stay in its files, fail first, then pass, then commit. Runs the gmod CLI from PATH (npm link in a gmod checkout, or the released CLI).",
+  "author": {
+    "name": "Soundheart Studios"
+  },
+  "homepage": "https://github.com/soundheart-studios/gmod",
+  "repository": "https://github.com/soundheart-studios/gmod",
+  "license": "MIT",
+  "keywords": [
+    "planning",
+    "agents",
+    "ci",
+    "tdd",
+    "governance"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./mcp.json",
+  "interface": {
+    "displayName": "gmod",
+    "shortDescription": "Planned work with proof: claim, red, green, commit",
+    "longDescription": "gmod holds Codex agents to a plan the person approved: each job names the files it may change and the checks that prove it done. Hooks refuse edits outside the claimed job and commits before a check failed and then passed; the MCP tools claim, check, commit and draft plan changes. The person decides plans and ADRs in a terminal of their own with gmod watch or gmod decide. Needs the gmod CLI on PATH.",
+    "developerName": "Soundheart Studios",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Take the next ready gmod job and finish it with proof"
+    ],
+    "brandColor": "#2F6F4E"
+  }
+}
