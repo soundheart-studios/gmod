@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "gmod": {
+      "command": "gmod",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}
