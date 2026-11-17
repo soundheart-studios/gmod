@@ -10,6 +10,8 @@
 
 Either way the work ends the same: a pull request, the gate, the review, and a merge on green. Jobs are claimed through git, so an agent on your laptop and one in CI never take the same job.
 
+On your machine the agent can also be Codex. Its hooks enforce the same rules, but there is no pane: you see the plan with `gmod board` and decide with `gmod watch` or `gmod decide`. See [gmod in Codex](codex.md).
+
 ## Agents in CI
 
 ![What CI does: the gate, always on and with no AI, proves every pull request; the review, optional, judges it with any model; agents, optional, are Claude Code on an Anthropic API key: they build ready jobs, fix their own failed checks and answer @gmod, and their pull requests pass the same gate and review](assets/gmod-ci.png)

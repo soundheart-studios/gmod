@@ -10,7 +10,7 @@ Plan your work with Claude. Agents build it, prove it works, and land it on `mai
 
 - **Proof, not promises.** Every job's test fails before the change and passes after. CI proves it again, and an AI reviews it.
 - **Nothing waits on you.** Work lands on green. You only approve the plan and the rules.
-- **Works with what you have.** GitHub, GitLab or Gitea. Claude, DeepSeek, or a model you host.
+- **Works with what you have.** GitHub, GitLab or Gitea. Claude Code or [Codex](docs/codex.md). Claude, DeepSeek, or a model you host.
 
 ## How it works
 
@@ -32,6 +32,8 @@ In Claude Code:
 ```
 
 Once per machine. From then on gmod is there in every project you open, and quiet in projects without a plan.
+
+In Codex: `codex plugin marketplace add soundheart-studios/gmod`, then `codex plugin add gmod@gmod`, with the `gmod` CLI on your `PATH`, and trust its hooks with `/hooks`. See [gmod in Codex](docs/codex.md).
 
 ## Ship your first job
 
@@ -70,6 +72,7 @@ Agents in CI always use an API key, never a person's Claude sign-in. More: [sett
 - [How it works](docs/how-it-works.md)
 - [Planning and rules: where your judgment goes](docs/planning.md)
 - [Agents, on your machine and in CI](docs/agents.md)
+- [gmod in Codex](docs/codex.md)
 - [Setting up a repository](docs/setup.md)
 - [Day to day](docs/day-to-day.md)
 - [Commands](docs/commands.md)
