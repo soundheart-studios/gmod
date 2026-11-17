@@ -1864,6 +1864,7 @@
         "package-lock.json",
         ".claude-plugin/plugin.json",
         "codex/plugin.json",
+        "codex/.codex-plugin/plugin.json",
         "CHANGELOG.md"
       ],
       "tests": [
