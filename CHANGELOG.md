@@ -2,6 +2,34 @@
 
 What each gmod release changes for you, with the details underneath.
 
+## 1.9.0 — 2026-11-16
+
+gmod works in OpenAI's Codex as well as in Claude Code: the agent claims a job, stays in its files, proves it red then green and commits, under the same rules and in the same words. Codex has no pane, so you see the plan as text with `gmod board` and decide in a terminal of your own with `gmod watch` or `gmod decide`. How to install it and trust the hooks is in [docs/codex.md](docs/codex.md). The protocol is still v1: only fields and commands were added.
+
+### gmod in Codex
+
+- **A Codex plugin in `codex/`,** with gmod's MCP tools, its hooks and four skills that name only the tools Codex has. Add the marketplace and the plugin with `codex plugin marketplace add soundheart-studios/gmod` and `codex plugin add gmod@gmod`, then trust the hooks in `/hooks`. It runs the `gmod` CLI from your `PATH`. (#105)
+- **`gmod mcp` serves the agent's tools over MCP (stdio)** to any host, under the same names as the mod's: claim, check, commit, status, next, note, ask, the proposal tools and `adr_propose`. Each call runs the same `gmod` command, and a refusal comes back as an error with gmod's reason. A tool that drafts a plan change or a decision ends its result with the card, so the agent can show it to you. (#104)
+- **`gmod hook codex` refuses in Codex what the mod refuses in Claude Code.** On `Bash` it applies the same shell rules and the commit gate; on `apply_patch` it refuses a patch that adds, changes, deletes or moves a file outside the claimed job, or touches the plan. If the hook itself fails, the tool call is blocked, not let through. (#106)
+- **Codex agents are told the routine and the news.** At `SessionStart` the agent hears gmod's routine, the job it holds with its files, criteria and binding ADR rules (or the next ready one); a subagent hears how to work in its own worktree; and after a tool call it hears, once, that main moved or that you answered its request. Only in a governed repository. (#108)
+- **Codex runs gmod's tools without asking each time:** `codex/mcp.json` approves the gmod server's tools by default, since they enforce their own rules and none decides anything for you. The Codex work skill stops a job on a refusal from gmod, its hooks or the sandbox. (#109)
+- **[docs/codex.md](docs/codex.md)** covers installing, trusting the hooks, what the hooks do, what's the same as in Claude Code and what differs, and running Codex headless. `gmod capabilities` lists what the Codex hooks enforce and the `board` command. (#113)
+
+### The plan as text, decisions in any terminal
+
+- **`gmod board` prints the plan as plain text:** progress, what needs you with each signal's id, and every phase and job with a row of step marks, fitted to the terminal's width, then any waiting proposal or decision card with the exact `gmod decide` commands for it. (#103)
+- **`gmod watch` is a live plan view in any terminal.** Move over phases, jobs and signals, open one, and approve, ask for changes or reject from there. It decides only through `gmod decide`, recorded as `Decided-Via: watch` with the revision you saw on screen, so a proposal that changed since is refused, and it refuses under an agent's environment. Without a terminal it prints the board once. (#114)
+
+### Host-neutral core
+
+- **The rules live in `lib/`, and hosts are adapters** ([ADR 0003](docs/adr/0003-hosts-are-adapters-the-rules-live-in-lib.md)). The shell rules moved to `lib/shell.mjs` and are tested under plain node in CI, the text rendering is `lib/render.mjs`, and the routine both hosts give their agents is `lib/routine.mjs`. Claude Code's mod behaves as before. (#101, #102, #103, #108)
+
+### Fixes
+
+- **`gmod commit` without a forge says the branch is ready.** When origin is a local path, not a forge gmod knows, it commits, pushes and exits 0 saying no pull request was opened, instead of failing after the push. (#110)
+- **Files a shell command writes outside the job are noticed.** After a shell command changes or creates a file outside the claimed job's files, tests and journal, the agent is told which, and how to put it back, once per set, in Codex and Claude Code. (#111)
+- **Starting a repository, and working in another one, is no longer blocked.** The commit gate allows the first commit of a repository with no commits yet, and still refuses an unclaimed commit after that. A shell write to a `.gmod/plan.json` is judged by the repository the path is in: refused where a plan is committed, allowed where there is none. (#112)
+
 ## 1.8.1 — 2026-11-09
 
 An agent's status tool costs about a tenth of what it did.
