@@ -23,6 +23,14 @@
 - **No merge queue yet.** GitHub's needs an organization, GitLab's merge trains need Premium. gmod brings branches up to date itself instead. On GitLab, two merge requests can still land in the same second; gmod then runs every finished job's checks on `main` as merged, and opens a breach issue if they fail.
 - **One repository per plan.**
 
+## Codex
+
+- **Codex's hooks must be trusted, once and again after each gmod upgrade.** You review and trust them with `/hooks` in Codex. An untrusted hook is skipped, so until you trust it nothing is refused locally: the agent can edit outside its job or run `git commit` itself, past the commit gate, and only CI's gate catches it. (`mcp__gmod__commit` still needs red, then green.)
+- **A hook is a guardrail.** It needs the `gmod` CLI on `PATH`. If the hook fails, the call is blocked. CI's gate is the hard line in Codex, just as it is in Claude Code.
+- **No pane and no slash commands.** You decide in a terminal of your own, with `gmod watch` or `gmod decide`, and the plan can't be unlocked for the agent (no `allow-plan`).
+
+More: [gmod in Codex](codex.md).
+
 ## Not yet proven live
 
 Built and unit-tested, but not yet seen working end to end: agents fixing their own failed pull requests and answering `@gmod` on **Gitea**, and fixing them on **GitLab**; a self-hosted GitLab.
