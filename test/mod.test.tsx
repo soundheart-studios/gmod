@@ -205,9 +205,21 @@ test('in a repository gmod does not govern, a subagent runs exactly as written',
 })
 
 test('the agent cannot move claims or rewrite the plan through the shell', async ($, on) => {
-  engine(on, () => ({ exitCode: 0, stdout: STATUS }))
+  const governedPlan = (args: readonly string[]) => args[0] === 'guard-path' && args[1] === '/repo/.gmod/plan.json'
+  engine(on, args => (governedPlan(args) ? { exitCode: 1, stdout: '.gmod/plan.json changes only after a person runs /gmod allow-plan' } : { exitCode: 0, stdout: STATUS }))
   expect((await $.tool.call({ tool: 'Bash', command: 'git push origin :refs/gmod/claims/add-sum' })).deny).toContain('claims change only')
   expect((await $.tool.call({ tool: 'Bash', command: "sed -i '' s/a/b/ .gmod/plan.json" })).deny).toContain('allow-plan')
+})
+
+test('a plan the shell writes is judged by the repository its path resolves to', async ($, on) => {
+  const seen = engine(on, args => (args[0] === 'guard-path' && args[1] === '/repo/.gmod/plan.json' ? { exitCode: 1, stdout: '.gmod/plan.json changes only after a person runs /gmod allow-plan' } : { exitCode: 0, stdout: STATUS }))
+  const scratch = 'cd /scratch && echo {} > .gmod/plan.json'
+  const out = await $.tool.call({ tool: 'Bash', command: scratch })
+  expect(out.deny).toBeUndefined()
+  expect(seen.runs.find(r => r.args[0] === 'guard-path')?.args).toEqual(['guard-path', '/scratch/.gmod/plan.json'])
+  expect(seen.calls.at(-1)?.command).toBe(scratch)
+  const here = await $.tool.call({ tool: 'Bash', command: 'cp /scratch/.gmod/plan.json .gmod/plan.json' })
+  expect(here.deny).toBe('gmod: .gmod/plan.json changes only through a proposal the person approves (mcp__gmod__propose_job), or after /gmod allow-plan')
 })
 
 test('only a person at the prompt allows plan edits', async ($, on) => {
