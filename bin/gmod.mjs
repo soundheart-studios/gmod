@@ -15,6 +15,7 @@ import * as stampLib from '../lib/stamp.mjs';
 import * as decideLib from '../lib/decide.mjs';
 import * as requestsLib from '../lib/requests.mjs';
 import * as renderLib from '../lib/render.mjs';
+import * as watchLib from '../lib/watch.mjs';
 import { createInterface } from 'node:readline/promises';
 import { readFileSync as readSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +30,9 @@ const HELP = `gmod: planned work with proof, on plain git
   gmod board [--width <n>] [--no-sync]
                                   the plan as plain text (what the pane shows), then any proposal
                                   and decision card with the gmod decide commands; --json: { lines }
+  gmod watch [--width <n>]        the plan, live, in a terminal of your own: move with the arrows,
+                                  enter opens a phase or job, a/c/r decide what is selected
+                                  (through gmod decide, via watch); without a terminal, the board once
   gmod stamp                      the change stamp: read state and signals again when it differs
   gmod next                       the first job ready to take
   gmod claim <job>                take a job (a git ref on origin; first push wins)
@@ -388,6 +392,19 @@ async function main() {
       if (!Number.isFinite(width) || width < 20) throw new core.GmodError('--width takes a number of columns, 20 or more');
       const lines = renderLib.boardWithCards(st, { width });
       return out(flags, { lines }, lines.join('\n'));
+    }
+    case 'watch': {
+      const width = flags.width === undefined ? (process.stdout.columns || renderLib.WIDTH) : Number(flags.width);
+      if (!Number.isFinite(width) || width < 20) throw new core.GmodError('--width takes a number of columns, 20 or more');
+      if (!(process.stdin.isTTY && process.stdout.isTTY)) {
+        const st = core.status(root, { sync: !flags['no-sync'] });
+        if (!st.governed && !st.proposal) throw new core.GmodError(`no ${core.PLAN} here (gmod init)`);
+        const lines = renderLib.boardWithCards(st, { width });
+        return out(flags, { lines }, lines.join('\n'));
+      }
+      return watchLib.run(root, {
+        after: r => (r.result?.sha ? publish(root, flags, r.result.id ? `gmod/adr-${r.result.id}` : `gmod/plan-${r.result.commit}`, r.result.sha) : []),
+      });
     }
     case 'next': {
       const plan = core.planFromDisk(root);
