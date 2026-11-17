@@ -3,7 +3,9 @@ import type { EngineInterface, Register, ToolCallResult } from 'claude-code'
 
 import type { GmodJob, GmodPhase, GmodProposal, GmodStatus } from '../types'
 import { upgradeNotice } from './version'
-import { commitDirs, commitsAlone, decision, mergesPr, movesClaims, resolveDir, writesPlan, writesRecords } from './shell'
+import { commitDirs, commitsAlone, decision, mergesPr, movesClaims, resolveDir, writesRecords } from './shell'
+// @ts-ignore: plain JavaScript, shared with every host (lib/shell.mjs)
+import { planTargets as planTargetsJs } from '../lib/shell.mjs'
 // @ts-ignore: plain JavaScript, shared with the gmod command (gmod signals)
 import { paneLine as paneLineJs, signalsFrom as signalsFromJs } from '../lib/signals.mjs'
 // @ts-ignore: plain JavaScript, shared with the Codex hook (gmod hook codex)
@@ -13,6 +15,7 @@ import { FOR_SUBAGENTS, ROUTINE } from '../lib/routine.mjs'
 type Signal = { id: string; kind: 'decide' | 'unstick' | 'know'; question: string; detail?: string; cause: Record<string, unknown>; evidence: string[]; actions: string[] }
 const signalsFrom = signalsFromJs as (s: GmodStatus | null) => Signal[]
 const paneLine = paneLineJs as (s: Signal) => string | null
+const planTargets = planTargetsJs as (cmd: string, cwd: string, home?: string) => string[]
 
 // The mod is thin: every rule lives in the gmod command (bin/gmod.mjs), the
 // same one people run at a terminal and CI runs on pull requests.
@@ -129,6 +132,22 @@ async function backToPlan($: EngineInterface): Promise<void> {
 async function guard($: EngineInterface, path: string): Promise<string | null> {
   const r = await gmod($, ['guard-path', path, ...((await read($, allowPlan)) ? ['--allow-plan'] : [])])
   return r.exitCode === 0 ? null : `gmod: ${text(r)}`
+}
+
+// Each plan a command writes is judged by the repository its path resolves
+// to (gmod guard-path): refused where that plan is committed, unless a person
+// ran /gmod allow-plan; let through in a repository not governed yet.
+async function guardPlans($: EngineInterface, cmd: string): Promise<string | null> {
+  if (await read($, allowPlan)) return null
+  const cwd = await $.session.cwd()
+  const home = /~/.test(cmd) ? (await $.process.run(['sh', '-c', 'printf %s "$HOME"'], { cwd })).stdout.trim() || undefined : undefined
+  for (const p of planTargets(cmd, cwd, home)) {
+    const r = await gmod($, ['guard-path', p])
+    if (r.exitCode === 0) continue
+    const why = text(r)
+    return /allow-plan/.test(why) ? 'gmod: .gmod/plan.json changes only through a proposal the person approves (mcp__gmod__propose_job), or after /gmod allow-plan' : `gmod: ${why}`
+  }
+  return null
 }
 
 // The commit gate runs in the hook, before the command, for the worktree each
@@ -376,9 +395,8 @@ export const register: Register = on => {
     if (decides === 'plan') return { deny: "gmod: approving or rejecting the plan is the person's decision: they do it in the gmod pane or with /gmod approve" }
     if (decides === 'managed') return { deny: "gmod: switching managed mode is the person's decision: they make it with gmod manage on|off at their own prompt" }
     if (writesRecords(cmd)) return { deny: "gmod: gmod's own records change only through gmod" }
-    if (writesPlan(cmd) && !(await read($, allowPlan))) {
-      return { deny: 'gmod: .gmod/plan.json changes only through a proposal the person approves (mcp__gmod__propose_job), or after /gmod allow-plan' }
-    }
+    const planRefused = await guardPlans($, cmd)
+    if (planRefused) return { deny: planRefused }
     if (!commitsAlone(cmd)) {
       return { deny: 'gmod: a commit runs on its own: beside git commit, only cd and git that changes no file (add, status, diff, log, show). Run the rest first, then commit, so what is committed is what the gate saw' }
     }
